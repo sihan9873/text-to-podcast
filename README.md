@@ -63,11 +63,13 @@ python server.py
 - [`docs/文字转播客生成系统_产品需求规格说明书.docx`](docs/文字转播客生成系统_产品需求规格说明书.docx)：需求基线。
 - [`docs/frontend-review.md`](docs/frontend-review.md)：TextCast 前端审核结论。
 - [`docs/integration-plan.md`](docs/integration-plan.md)：前后端接口和实施顺序。
+- [`docs/source-input-module.md`](docs/source-input-module.md)：原文输入规则、接口和验收记录。
 - [`docs/分工.md`](docs/分工.md)：当前小组分工记录。
 
 ## 当前状态
 
 - TextCast 前端可以启动和构建，现阶段主要由 Mock 数据驱动。
+- 原文输入前端已支持 TXT/UTF-8/100 KB 校验、编辑、字数提示、超长确认、API 保存和自动化测试。
 - “提交给 AI 修改”尚未调用真实大模型。
 - 脚本保存和确认仍有前端缓存操作，需要改为服务端持久化。
 - 试听、真实 TTS、数据库、受控下载和部署尚未完成。

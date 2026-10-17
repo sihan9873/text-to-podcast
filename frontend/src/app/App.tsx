@@ -173,7 +173,7 @@ function ProjectRoute() {
   if (!project) return <NotFound onNavigate={navigate} />
 
   return (
-    <ProjectPage project={project} onNavigate={navigate} />
+    <ProjectPage key={project.id} project={project} onNavigate={navigate} />
   )
 }
 

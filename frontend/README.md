@@ -21,6 +21,7 @@ pnpm dev
 质量检查：
 
 ```powershell
+pnpm test
 pnpm typecheck
 pnpm lint
 pnpm build
@@ -36,6 +37,7 @@ pnpm build
 - `src/api/`：脚本、生成任务和音频请求封装。
 - `src/mocks/`：开发期模拟数据与接口处理器。
 - `src/types/`：前后端共享语义的 TypeScript 类型。
+- `src/features/source-input/`：原文文件读取、校验和自动化测试。
 
 ## Mock 与真实后端
 
@@ -49,3 +51,5 @@ VITE_ENABLE_MOCK=false
 ```
 
 正式切换前必须保证后端响应与 `src/api/`、`src/types/` 和现有 Mock 契约一致。
+
+原文输入在开发环境通过 `PUT /api/projects/:projectId` 保存，并由 Mock 写入浏览器存储以支持刷新恢复；这不替代正式后端数据库。具体规则见 `../docs/source-input-module.md`。

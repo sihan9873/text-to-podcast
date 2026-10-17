@@ -8,7 +8,9 @@ const sampleVoice: VoiceConfig = {
   rate: "normal",
 };
 
-export const mockProjects: Project[] = [
+const STORAGE_KEY = "textcast.mock.projects.v1";
+
+const seedProjects: Project[] = [
   {
     id: "project-001",
     name: "人工智能入门播客",
@@ -99,3 +101,32 @@ export const mockProjects: Project[] = [
     audioVersions: [],
   },
 ];
+
+function loadStoredProjects(): Project[] | null {
+  try {
+    if (typeof localStorage === "undefined") return null;
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) return null;
+    const parsed: unknown = JSON.parse(stored);
+    return Array.isArray(parsed) ? (parsed as Project[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 开发环境的模拟数据库。使用 localStorage 是为了让页面刷新后仍能恢复
+ * 原文等项目数据；正式环境由后端数据库承担持久化。
+ */
+export const mockProjects: Project[] =
+  loadStoredProjects() ?? structuredClone(seedProjects);
+
+export function persistMockProjects(): void {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(mockProjects));
+    }
+  } catch {
+    // 存储空间或隐私设置可能禁用 localStorage；接口仍保持内存可用。
+  }
+}

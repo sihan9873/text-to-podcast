@@ -92,6 +92,7 @@ export async function request<T>(
     response = await fetch(url, {
       method,
       headers,
+      credentials: "include",
       body: body === undefined ? undefined : JSON.stringify(body),
       signal,
     });

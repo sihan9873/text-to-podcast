@@ -4,23 +4,38 @@ import {
   Routes,
   Route,
   Outlet,
+  Navigate,
   useNavigate,
   useLocation,
   useParams,
 } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Plus, FolderKanban, FileText } from "lucide-react"
+import {
+  Plus,
+  FolderKanban,
+  FileText,
+  LayoutDashboard,
+  UserRound,
+  Users,
+} from "lucide-react"
 
 import { AppButton } from "@/components/common/AppButton"
 import { AppCard, AppCardContent } from "@/components/common/AppCard"
 import { AppNavbar } from "@/components/layout/AppNavbar"
-import { AppSidebar } from "@/components/layout/AppSidebar"
+import {
+  AppSidebar,
+  type AppSidebarSection,
+} from "@/components/layout/AppSidebar"
 
 import ProjectPage from "@/app/Project"
 import ScriptPage from "@/app/Script"
 import AudioPage from "@/app/Audio"
+import LoginPage from "@/app/Login"
+import ProfilePage from "@/app/Profile"
+import UsersPage from "@/app/Users"
 
 import { getProjects, getProjectById, createProject } from "@/features/projects/api"
+import { useAuth } from "@/features/auth/AuthProvider"
 import type { Project } from "@/types/project"
 
 // ============================================================
@@ -31,6 +46,7 @@ function AppLayout() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const queryClient = useQueryClient()
+  const { user } = useAuth()
 
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [collapsed, setCollapsed] = React.useState(false)
@@ -53,18 +69,42 @@ function AppLayout() {
   }, [navigate, queryClient])
 
   const sidebarSections = React.useMemo(
-    () => [
-      {
-        title: "项目",
-        items: projects.map((p) => ({
+    () => {
+      const sections: AppSidebarSection[] = [
+        {
+          title: "工作区",
+          items: [
+            {
+              label: "全部项目",
+              href: "/projects",
+              icon: LayoutDashboard,
+              badge: projects.length || undefined,
+            },
+          ],
+        },
+        {
+          title: "最近项目",
+          items: projects.slice(0, 8).map((p) => ({
           label: p.name,
           href: `/projects/${p.id}`,
           icon: FolderKanban,
           badge: p.scriptVersions.length || undefined,
         })),
-      },
-    ],
-    [projects]
+        },
+      ]
+      if (user?.role === "admin") {
+        sections.push({
+          title: "系统管理",
+          items: [{ label: "用户管理", href: "/admin/users", icon: Users }],
+        })
+      }
+      sections.push({
+        title: "账户",
+        items: [{ label: "个人资料", href: "/profile", icon: UserRound }],
+      })
+      return sections
+    },
+    [projects, user?.role]
   )
 
   return (
@@ -87,7 +127,7 @@ function AppLayout() {
         <AppNavbar
           title="TextCast"
           onMenuClick={() => setMobileOpen(true)}
-          user={{ name: "张三" }}
+          user={{ name: user?.displayName ?? user?.username ?? "用户" }}
           onUserClick={() => navigate("/profile")}
           actions={
             <AppButton size="sm" onClick={handleCreateProject}>
@@ -103,6 +143,29 @@ function AppLayout() {
       </div>
     </div>
   )
+}
+
+function RequireAuth() {
+  const { user, isLoading } = useAuth()
+  const location = useLocation()
+
+  if (isLoading) return <Loading text="正在验证登录状态..." />
+  if (!user) {
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: `${location.pathname}${location.search}` }}
+      />
+    )
+  }
+  return <Outlet />
+}
+
+function RequireAdmin() {
+  const { user } = useAuth()
+  if (user?.role !== "admin") return <Navigate to="/projects" replace />
+  return <Outlet />
 }
 
 // ============================================================
@@ -343,6 +406,11 @@ function NotFound({ onNavigate }: { onNavigate: (href: string) => void }) {
   )
 }
 
+function NotFoundRoute() {
+  const navigate = useNavigate()
+  return <NotFound onNavigate={navigate} />
+}
+
 // ============================================================
 // App
 // ============================================================
@@ -350,18 +418,26 @@ function NotFound({ onNavigate }: { onNavigate: (href: string) => void }) {
 export default function App() {
   return (
     <Routes>
-      <Route element={<AppLayout />}>
-        <Route index element={<ProjectsListRoute />} />
-        <Route path="projects" element={<ProjectsListRoute />} />
-        <Route path="projects/:projectId" element={<ProjectRoute />} />
-        <Route
-          path="projects/:projectId/scripts/:versionId"
-          element={<ScriptRoute />}
-        />
-        <Route
-          path="projects/:projectId/scripts/:scriptVersionId/audio"
-          element={<AudioRoute />}
-        />
+      <Route path="login" element={<LoginPage />} />
+      <Route element={<RequireAuth />}>
+        <Route element={<AppLayout />}>
+          <Route index element={<Navigate to="/projects" replace />} />
+          <Route path="projects" element={<ProjectsListRoute />} />
+          <Route path="projects/:projectId" element={<ProjectRoute />} />
+          <Route
+            path="projects/:projectId/scripts/:versionId"
+            element={<ScriptRoute />}
+          />
+          <Route
+            path="projects/:projectId/scripts/:scriptVersionId/audio"
+            element={<AudioRoute />}
+          />
+          <Route path="profile" element={<ProfilePage />} />
+          <Route element={<RequireAdmin />}>
+            <Route path="admin/users" element={<UsersPage />} />
+          </Route>
+          <Route path="*" element={<NotFoundRoute />} />
+        </Route>
       </Route>
     </Routes>
   )

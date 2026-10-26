@@ -18,6 +18,8 @@
 text-to-podcast/
 ├─ frontend/           TextCast 前端项目
 ├─ backend/
+│  ├─ app/             FastAPI 正式后端
+│  ├─ tests/           正式后端自动化测试
 │  └─ prototype/       Python 离线流程演示，不是正式后端
 ├─ docs/               需求、分工、审核与联调文档
 ├─ .github/            CI 和 Pull Request 模板
@@ -58,6 +60,10 @@ python server.py
 
 该原型有自己的简单演示页面，只用于说明任务提交、状态轮询和音频获取过程，不能直接充当正式前端的后端。
 
+## 运行正式后端
+
+正式后端已经实现登录、会话和管理员用户管理。安装、初始管理员创建及联调方式见 [`backend/README.md`](backend/README.md)，接口契约见 [`docs/user-management-api.md`](docs/user-management-api.md)。
+
 ## 项目资料
 
 - [`docs/文字转播客生成系统_产品需求规格说明书.docx`](docs/文字转播客生成系统_产品需求规格说明书.docx)：需求基线。
@@ -69,6 +75,7 @@ python server.py
 ## 当前状态
 
 - TextCast 前端可以启动和构建，现阶段主要由 Mock 数据驱动。
+- 用户登录、个人资料和管理员用户管理具有前端、Mock 与 FastAPI/SQLite 正式接口。
 - 原文输入前端已支持 TXT/UTF-8/100 KB 校验、编辑、字数提示、超长确认、API 保存和自动化测试。
 - “提交给 AI 修改”尚未调用真实大模型。
 - 脚本保存和确认仍有前端缓存操作，需要改为服务端持久化。

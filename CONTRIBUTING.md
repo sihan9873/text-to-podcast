@@ -5,7 +5,7 @@
 1. 从最新 `main` 创建分支。
 2. 前端开发进入 `frontend/`，执行 `pnpm install --frozen-lockfile`。
 3. 在小范围内完成一个可审查的变更。
-4. 前端提交前在 `frontend/` 运行 `pnpm check`；后端原型变更运行 `python backend/prototype/test_demo.py`。
+4. 前端提交前在 `frontend/` 运行 `pnpm check`；正式后端变更在 `backend/` 运行 `pytest`；后端原型变更运行 `python backend/prototype/test_demo.py`。
 5. 推送分支并创建 Pull Request。
 
 ## 分支命名

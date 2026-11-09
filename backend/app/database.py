@@ -92,6 +92,9 @@ class Database:
     def initialize(self) -> None:
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            from .migrations import migrate
+
+            migrate(connection)
 
     def count_users(self) -> int:
         with self.connect() as connection:

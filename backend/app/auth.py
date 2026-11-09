@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 from fastapi import APIRouter, Depends, Request, Response
 
 from .config import Settings
@@ -11,6 +13,7 @@ from .schemas import (
     LoginRequest,
     LoginResponse,
     MeResponse,
+    RegisterRequest,
     UpdateMyProfileRequest,
 )
 from .security import (
@@ -38,6 +41,42 @@ def _set_session_cookie(
         samesite="lax",
         path="/api",
     )
+
+
+@router.post("/register", response_model=LoginResponse, status_code=201)
+def register(
+    body: RegisterRequest,
+    response: Response,
+    settings: Settings = Depends(get_settings),
+    database: Database = Depends(get_database),
+) -> dict[str, object]:
+    if not settings.allow_registration:
+        raise ApiError(403, "REGISTRATION_DISABLED", "系统当前未开放用户注册")
+    try:
+        username = validate_username(body.username)
+        validate_password(body.password)
+    except CredentialValidationError as exc:
+        raise ApiError(400, "CREDENTIAL_INVALID", str(exc)) from exc
+    display_name = body.displayName.strip()
+    if not display_name:
+        raise ApiError(400, "DISPLAY_NAME_REQUIRED", "显示名称不能为空")
+    try:
+        user = database.create_user(
+            username=username,
+            display_name=display_name,
+            password=body.password,
+            role="user",
+            status="active",
+        )
+    except sqlite3.IntegrityError as exc:
+        raise ApiError(409, "USERNAME_EXISTS", "用户名已经存在") from exc
+
+    raw_token, token_hash = create_session_token()
+    expires_at = database.create_session(
+        token_hash, str(user["id"]), settings.session_ttl_seconds
+    )
+    _set_session_cookie(response, settings, raw_token)
+    return {"user": database.get_user(str(user["id"])), "expiresAt": expires_at}
 
 
 @router.post("/login", response_model=LoginResponse)

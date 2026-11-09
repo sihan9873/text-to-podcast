@@ -1,0 +1,8 @@
+{
+  "duration_ms": 3048,
+  "sample_rate": 24000,
+  "channels": 1,
+  "format": "mp3",
+  "simulated": true,
+  "real_speech": false
+}

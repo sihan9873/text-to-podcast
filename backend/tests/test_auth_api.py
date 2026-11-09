@@ -62,6 +62,35 @@ async def create_normal_user(
 
 
 @pytest.mark.anyio
+async def test_registration_creates_normal_user_and_session(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/auth/register",
+        json={
+            "username": "new-user",
+            "displayName": "新用户",
+            "password": "NewUserPass123!",
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["user"]["role"] == "user"
+    assert response.json()["user"]["status"] == "active"
+    assert (await client.get("/api/auth/me")).status_code == 200
+
+    duplicate = await client.post(
+        "/api/auth/register",
+        json={
+            "username": "new-user",
+            "displayName": "重复用户",
+            "password": "AnotherPass123!",
+        },
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["code"] == "USERNAME_EXISTS"
+
+
+@pytest.mark.anyio
 async def test_login_session_and_logout(client: AsyncClient) -> None:
     bad = await client.post(
         "/api/auth/login", json={"username": "admin", "password": "wrong"}

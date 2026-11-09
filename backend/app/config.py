@@ -40,6 +40,9 @@ class Settings:
     secure_cookies: bool = field(
         default_factory=lambda: _env_bool("TEXTCAST_SECURE_COOKIES", False)
     )
+    allow_registration: bool = field(
+        default_factory=lambda: _env_bool("TEXTCAST_ALLOW_REGISTRATION", True)
+    )
     cors_origins: list[str] = field(default_factory=_cors_origins)
     bootstrap_admin_username: str | None = field(
         default_factory=lambda: os.getenv("TEXTCAST_BOOTSTRAP_ADMIN_USERNAME")

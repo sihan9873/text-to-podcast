@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Navigate, useLocation, useNavigate } from "react-router-dom"
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom"
 import { Headphones, LoaderCircle, LockKeyhole, UserRound } from "lucide-react"
 
 import { ApiError } from "@/api/request"
@@ -18,7 +18,7 @@ interface LoginLocationState {
 }
 
 export default function LoginPage() {
-  const { user, isLoading, login } = useAuth()
+  const { user, isLoading, login, loginNotice } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [username, setUsername] = React.useState("")
@@ -69,10 +69,18 @@ export default function LoginPage() {
           <AppCardHeader>
             <AppCardTitle>登录系统</AppCardTitle>
             <AppCardDescription>
-              使用管理员分配的账户进入文字转播客工作区
+              使用已有账户进入文字转播客工作区
             </AppCardDescription>
           </AppCardHeader>
           <AppCardContent>
+            {loginNotice && (
+              <p
+                role="status"
+                className="mb-5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-primary"
+              >
+                {loginNotice}
+              </p>
+            )}
             <form className="space-y-5" onSubmit={handleSubmit}>
               <label className="block space-y-2 text-sm">
                 <span className="font-medium">用户名</span>
@@ -119,6 +127,13 @@ export default function LoginPage() {
                 {submitting ? "正在登录" : "登录"}
               </AppButton>
             </form>
+
+            <p className="mt-5 text-center text-sm text-muted-foreground">
+              还没有账号？{" "}
+              <Link className="font-medium text-primary hover:underline" to="/register">
+                立即注册
+              </Link>
+            </p>
 
             {import.meta.env.VITE_ENABLE_MOCK === "true" && (
               <p className="mt-5 text-center text-xs text-muted-foreground">

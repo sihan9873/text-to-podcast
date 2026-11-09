@@ -29,6 +29,12 @@ class LoginRequest(StrictModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class RegisterRequest(StrictModel):
+    username: str = Field(min_length=3, max_length=32)
+    displayName: str = Field(min_length=1, max_length=80)
+    password: str = Field(min_length=8, max_length=128)
+
+
 class LoginResponse(StrictModel):
     user: UserOut
     expiresAt: str

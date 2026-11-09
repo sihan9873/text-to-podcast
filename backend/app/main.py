@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import logging
+from uuid import uuid4
+from starlette.exceptions import HTTPException
+from .contracts import envelope
+from .projects import router as projects_router
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -57,8 +62,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["Content-Type", "Accept"],
     )
 
+    @app.middleware("http")
+    async def request_context(request: Request, call_next):
+        request.state.request_id = str(uuid4())
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request.state.request_id
+        return response
+
+    def is_v1(request: Request) -> bool:
+        return request.url.path == "/api/v1" or request.url.path.startswith("/api/v1/")
+
+    @app.exception_handler(HTTPException)
+    async def http_error(request: Request, exc: HTTPException):
+        if is_v1(request):
+            return JSONResponse(status_code=exc.status_code, content=envelope(
+                request, code="NOT_FOUND" if exc.status_code == 404 else "HTTP_ERROR",
+                message="资源不存在" if exc.status_code == 404 else "请求无法处理"), headers=exc.headers)
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers)
+
+    @app.exception_handler(Exception)
+    async def unexpected_error(request: Request, exc: Exception):
+        logging.getLogger(__name__).error("Unhandled request %s", getattr(request.state, "request_id", "unknown"), exc_info=exc)
+        return JSONResponse(status_code=500, content=envelope(request, code="INTERNAL_ERROR", message="服务器内部错误") if is_v1(request) else {"code": "INTERNAL_ERROR", "message": "服务器内部错误"})
+
     @app.exception_handler(ApiError)
-    async def api_error_handler(_: Request, exc: ApiError) -> JSONResponse:
+    async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
+        if is_v1(request):
+            return JSONResponse(status_code=exc.status_code, content=envelope(request, code=exc.code, message=exc.message))
         body: dict[str, object] = {"code": exc.code, "message": exc.message}
         if exc.details is not None:
             body["details"] = exc.details
@@ -66,8 +96,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(
-        _: Request, exc: RequestValidationError
+        request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        if is_v1(request):
+            return JSONResponse(status_code=422, content=envelope(request, code="INVALID_INPUT", message="请求参数不合法"))
         details = [
             {
                 "field": ".".join(str(part) for part in item["loc"][1:]),
@@ -88,8 +120,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/", include_in_schema=False)
+    def root() -> dict[str, str]:
+        return {
+            "service": "TextCast API",
+            "health": "/api/health",
+            "docs": "/docs",
+        }
+
     app.include_router(auth_router, prefix="/api")
     app.include_router(users_router, prefix="/api")
+    app.include_router(projects_router, prefix="/api/v1")
     return app
 
 

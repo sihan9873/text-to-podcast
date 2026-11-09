@@ -70,6 +70,18 @@ VITE_API_BASE_URL=http://127.0.0.1:8000/api
 VITE_ENABLE_MOCK=false
 ```
 
+常用后端地址：
+
+- `http://127.0.0.1:8000/`：服务信息和常用入口。
+- `http://127.0.0.1:8000/docs`：可交互接口文档。
+- `http://127.0.0.1:8000/api/health`：进程健康检查。
+
+公开注册默认开启。如需仅允许管理员创建账号，设置：
+
+```env
+TEXTCAST_ALLOW_REGISTRATION=false
+```
+
 ## 验证
 
 ```powershell

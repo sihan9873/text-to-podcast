@@ -37,6 +37,18 @@ export async function login(
   return response.user
 }
 
+export async function register(
+  username: string,
+  displayName: string,
+  password: string
+): Promise<AuthUser> {
+  const response = await request<LoginResponse>("/auth/register", {
+    method: "POST",
+    body: { username, displayName, password },
+  })
+  return response.user
+}
+
 export function logout(): Promise<void> {
   return request<void>("/auth/logout", { method: "POST" })
 }

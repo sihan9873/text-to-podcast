@@ -7,6 +7,8 @@ export interface ApiErrorBody {
   details?: unknown;
 }
 
+export const AUTH_REQUIRED_EVENT = "textcast:auth-required"
+
 /** 前端统一抛出的错误对象 */
 export class ApiError extends Error {
   public readonly status: number;
@@ -129,6 +131,18 @@ export async function request<T>(
             code: `HTTP_${response.status}`,
             message: response.statusText || "请求失败",
           };
+    const isExpectedAnonymousCheck =
+      path === "/auth/me" && errBody.code === "AUTH_REQUIRED"
+    const isCredentialAttempt =
+      path === "/auth/login" || path === "/auth/register"
+    if (
+      response.status === 401 &&
+      !isExpectedAnonymousCheck &&
+      !isCredentialAttempt &&
+      typeof window !== "undefined"
+    ) {
+      window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT))
+    }
     throw new ApiError(response.status, errBody);
   }
 

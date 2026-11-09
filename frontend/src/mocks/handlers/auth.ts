@@ -32,6 +32,48 @@ function requireAdmin() {
 }
 
 export const authHandlers = [
+  http.post("/api/auth/register", async ({ request }) => {
+    await delay(180)
+    const body = (await request.json()) as {
+      username?: string
+      displayName?: string
+      password?: string
+    }
+    const validationError =
+      validateUsername(body.username ?? "") ??
+      validateDisplayName(body.displayName ?? "") ??
+      validatePassword(body.password ?? "")
+    if (validationError) {
+      return error(400, "CREDENTIAL_INVALID", validationError)
+    }
+    const username = body.username!.trim().toLowerCase()
+    if (mockUsers.some((user) => user.username === username)) {
+      return error(409, "USERNAME_EXISTS", "用户名已经存在")
+    }
+    const timestamp = new Date().toISOString()
+    const user = {
+      id: `user-${crypto.randomUUID()}`,
+      username,
+      displayName: body.displayName!.trim(),
+      password: body.password!,
+      role: "user" as const,
+      status: "active" as const,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      lastLoginAt: timestamp,
+    }
+    mockUsers.unshift(user)
+    persistMockUsers()
+    setMockSessionUser(user.id)
+    return HttpResponse.json(
+      {
+        user: publicMockUser(user),
+        expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString(),
+      },
+      { status: 201 }
+    )
+  }),
+
   http.post("/api/auth/login", async ({ request }) => {
     await delay(180)
     const body = (await request.json()) as {

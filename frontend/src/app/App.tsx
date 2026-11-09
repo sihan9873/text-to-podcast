@@ -27,16 +27,14 @@ import {
   type AppSidebarSection,
 } from "@/components/layout/AppSidebar"
 
-import ProjectPage from "@/app/Project"
-import ScriptPage from "@/app/Script"
-import AudioPage from "@/app/Audio"
+import PodcastWorkflow from "@/app/PodcastWorkflow"
 import LoginPage from "@/app/Login"
+import RegisterPage from "@/app/Register"
 import ProfilePage from "@/app/Profile"
 import UsersPage from "@/app/Users"
 
-import { getProjects, getProjectById, createProject } from "@/features/projects/api"
+import { generationRequest, listGenerationProjects, type GenerationProjectSummary } from "@/api/generationBackend"
 import { useAuth } from "@/features/auth/AuthProvider"
-import type { Project } from "@/types/project"
 
 // ============================================================
 // App Layout
@@ -54,16 +52,14 @@ function AppLayout() {
   // 项目列表：唯一数据源来自 API（TanStack Query 缓存）
   const { data: projects = [] } = useQuery({
     queryKey: ["projects"],
-    queryFn: () => getProjects(),
+    queryFn: () => listGenerationProjects(),
   })
 
   const handleCreateProject = React.useCallback(async () => {
-    const project = await createProject({ name: "未命名项目" })
+    const project = await generationRequest<GenerationProjectSummary>("/projects", "POST", { title: "未命名项目" })
     // 让列表重新请求（或直接用返回值做乐观更新）
     await queryClient.invalidateQueries({ queryKey: ["projects"] })
-    // 预填详情缓存，避免跳转后二次请求闪烁
-    queryClient.setQueryData(["project", project.id], project)
-    navigate(`/projects/${project.id}`)
+    navigate(`/projects/${project.project_id}`)
     setMobileOpen(false)
     return project
   }, [navigate, queryClient])
@@ -85,10 +81,10 @@ function AppLayout() {
         {
           title: "最近项目",
           items: projects.slice(0, 8).map((p) => ({
-          label: p.name,
-          href: `/projects/${p.id}`,
+          label: p.title,
+          href: `/projects/${p.project_id}`,
           icon: FolderKanban,
-          badge: p.scriptVersions.length || undefined,
+
         })),
         },
       ]
@@ -182,14 +178,13 @@ function ProjectsListRoute() {
     isError,
   } = useQuery({
     queryKey: ["projects"],
-    queryFn: () => getProjects(),
+    queryFn: () => listGenerationProjects(),
   })
 
   const handleCreateProject = React.useCallback(async () => {
-    const project = await createProject({ name: "未命名项目" })
+    const project = await generationRequest<GenerationProjectSummary>("/projects", "POST", { title: "未命名项目" })
     await queryClient.invalidateQueries({ queryKey: ["projects"] })
-    queryClient.setQueryData(["project", project.id], project)
-    navigate(`/projects/${project.id}`)
+    navigate(`/projects/${project.project_id}`)
   }, [navigate, queryClient])
 
   if (isPending) {
@@ -212,93 +207,10 @@ function ProjectsListRoute() {
 function ProjectRoute() {
   const { projectId } = useParams()
   const navigate = useNavigate()
-
-  const {
-    data: project,
-    isPending,
-    isError,
-    error,
-  } = useQuery({
-    queryKey: ["project", projectId],
-    queryFn: () => getProjectById(projectId!),
-    enabled: !!projectId,
-  })
-
-  if (!projectId) return <NotFound onNavigate={navigate} />
-  if (isPending) return <Loading text="正在加载项目..." />
-  if (isError) {
-    // 404 单独处理
-    if ((error as { status?: number })?.status === 404) {
-      return <NotFound onNavigate={navigate} />
-    }
-    return <ErrorState message="项目加载失败，请稍后重试。" />
-  }
-  if (!project) return <NotFound onNavigate={navigate} />
-
-  return (
-    <ProjectPage key={project.id} project={project} onNavigate={navigate} />
-  )
+  const id = Number(projectId)
+  if (!Number.isSafeInteger(id) || id <= 0) return <NotFound onNavigate={navigate} />
+  return <PodcastWorkflow key={id} projectId={id} />
 }
-
-function ScriptRoute() {
-  const { projectId, versionId } = useParams()
-  const navigate = useNavigate()
-
-  // project 详情用于面包屑 / 标题；脚本本身由 ScriptPage 内部按 versionId 请求
-  const {
-    data: project,
-    isPending,
-    isError,
-  } = useQuery({
-    queryKey: ["project", projectId],
-    queryFn: () => getProjectById(projectId!),
-    enabled: !!projectId && !!versionId,
-  })
-
-  if (!projectId || !versionId) {
-    return <NotFound onNavigate={navigate} />
-  }
-  if (isPending) return <Loading text="正在加载脚本..." />
-  if (isError || !project) return <NotFound onNavigate={navigate} />
-
-  return (
-    <ScriptPage
-      project={project}
-      versionId={versionId}
-      onNavigate={navigate}
-    />
-  )
-}
-
-function AudioRoute() {
-  const { projectId, scriptVersionId } = useParams()
-  const navigate = useNavigate()
-
-  const {
-    data: project,
-    isPending,
-    isError,
-  } = useQuery({
-    queryKey: ["project", projectId],
-    queryFn: () => getProjectById(projectId!),
-    enabled: !!projectId && !!scriptVersionId,
-  })
-
-  if (!projectId || !scriptVersionId) {
-    return <NotFound onNavigate={navigate} />
-  }
-  if (isPending) return <Loading text="正在加载音频..." />
-  if (isError || !project) return <NotFound onNavigate={navigate} />
-
-  return (
-    <AudioPage
-      project={project}
-      scriptVersionId={scriptVersionId}
-      onNavigate={navigate}
-    />
-  )
-}
-
 // ============================================================
 // Projects list (dashboard)
 // ============================================================
@@ -308,7 +220,7 @@ function ProjectsList({
   onNavigate,
   onCreateProject,
 }: {
-  projects: Project[]
+  projects: GenerationProjectSummary[]
   onNavigate: (href: string) => void
   onCreateProject: () => void
 }) {
@@ -343,9 +255,9 @@ function ProjectsList({
         <div className="grid gap-4 sm:grid-cols-2">
           {projects.map((project) => (
             <AppCard
-              key={project.id}
+              key={project.project_id}
               interactive
-              onClick={() => onNavigate(`/projects/${project.id}`)}
+              onClick={() => onNavigate(`/projects/${project.project_id}`)}
             >
               <AppCardContent className="p-5">
                 <div className="flex items-start justify-between">
@@ -354,16 +266,16 @@ function ProjectsList({
                       <FileText className="size-5" />
                     </span>
                     <div>
-                      <h3 className="font-semibold">{project.name}</h3>
+                      <h3 className="font-semibold">{project.title}</h3>
                       <p className="text-xs text-muted-foreground">
-                        {project.scriptVersions.length} 个版本
+                        {project.latest_audio_version_id ? "已有音频" : project.confirmed_script_id ? "已确认脚本" : project.current_script_id ? "待确认脚本" : "等待生成脚本"}
                       </p>
                     </div>
                   </div>
                 </div>
                 <p className="mt-3 text-xs text-muted-foreground">
                   更新于{" "}
-                  {new Date(project.updatedAt).toLocaleDateString("zh-CN")}
+                  {new Date(project.updated_at).toLocaleDateString("zh-CN")}
                 </p>
               </AppCardContent>
             </AppCard>
@@ -419,19 +331,13 @@ export default function App() {
   return (
     <Routes>
       <Route path="login" element={<LoginPage />} />
+      <Route path="register" element={<RegisterPage />} />
       <Route element={<RequireAuth />}>
         <Route element={<AppLayout />}>
           <Route index element={<Navigate to="/projects" replace />} />
           <Route path="projects" element={<ProjectsListRoute />} />
           <Route path="projects/:projectId" element={<ProjectRoute />} />
-          <Route
-            path="projects/:projectId/scripts/:versionId"
-            element={<ScriptRoute />}
-          />
-          <Route
-            path="projects/:projectId/scripts/:scriptVersionId/audio"
-            element={<AudioRoute />}
-          />
+
           <Route path="profile" element={<ProfilePage />} />
           <Route element={<RequireAdmin />}>
             <Route path="admin/users" element={<UsersPage />} />

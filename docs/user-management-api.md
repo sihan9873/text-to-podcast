@@ -25,6 +25,21 @@
 
 ## 登录与当前用户
 
+### 注册
+
+```http
+POST /api/auth/register
+Content-Type: application/json
+
+{
+  "username": "alice",
+  "displayName": "Alice",
+  "password": "UserPass123!"
+}
+```
+
+注册账号固定为普通启用用户，成功返回 `201`、设置会话 Cookie 并返回与登录相同的数据结构。失败码包括 `USERNAME_EXISTS`、`CREDENTIAL_INVALID` 和 `REGISTRATION_DISABLED`。是否开放注册由 `TEXTCAST_ALLOW_REGISTRATION` 控制。
+
 ### 登录
 
 ```http
@@ -155,6 +170,8 @@ def admin_endpoint(admin = Depends(require_admin)):
 ```
 
 项目、脚本、任务、语料、纠错、声音样本和音频表都应保存 `owner_user_id`。查询、更新和下载时使用会话内的用户 ID 作为必需条件，例如 `WHERE id = ? AND owner_user_id = ?`，不能仅根据资源 ID 查询。
+
+当前实现说明：正式 SQLite 暂时只有用户、会话和审计表；项目、脚本和音频仍由前端 Mock 提供，尚未完成 `owner_user_id` 数据隔离。其他模块接入正式后端时必须补齐此约束。
 
 ## 开发 Mock
 

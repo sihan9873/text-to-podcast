@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-10",
+  "scope": "Tests executed against the reorganized local monorepo; no remote writes and no real Qwen inference",
+  "backend": {
+    "environment": "podcast-backend",
+    "runner": "pytest",
+    "passed": 41,
+    "subtests_passed": 16,
+    "failed": 0,
+    "seconds": 15.4,
+    "warning": "Existing Starlette TestClient httpx deprecation; no dependency changes made"
+  },
+  "tts": {
+    "environment": "podcast-tts-service",
+    "runner": "unittest",
+    "run": 24,
+    "passed": 23,
+    "skipped": 1,
+    "failed": 0,
+    "seconds": 2.551
+  },
+  "cross_module": {
+    "environment": "podcast-tts-service",
+    "runner": "unittest",
+    "passed": 5,
+    "failed": 0,
+    "seconds": 0.549
+  },
+  "total": {
+    "passed": 69,
+    "skipped_real_model": 1,
+    "failed": 0
+  },
+  "sandbox_note": "Runs used PYTHONPATH=/tmp/podcast-publish-test-loop:. with temporary 10ms asyncio loop timer to work around blocked cross-thread wakeups. Not production code or included source.",
+  "data_safety": "Backend DB tests use isolated temporary databases. Existing source directories, live databases, model environments and user assets were not modified.",
+  "not_validated": [
+    "Real TCP service deployment from this new directory",
+    "Real Qwen inference or audio quality after reorganization",
+    "Frontend integration",
+    "MySQL server integration"
+  ],
+  "commands": {
+    "backend": "cd backend && conda run --no-capture-output -n podcast-backend python -m pytest -q",
+    "tts": "cd tts && conda run --no-capture-output -n podcast-tts-service python -m unittest discover -s tests -v",
+    "cross_module": "from repo root: conda run --no-capture-output -n podcast-tts-service python -m unittest discover -s tests -v"
+  }
+}

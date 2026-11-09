@@ -1,43 +1,50 @@
-# Frontend dependencies and builds
-frontend/node_modules/
-frontend/dist/
-frontend/dist-ssr/
-frontend/*.local
-
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-pnpm-debug.log*
-
-# Environment files and secrets
+__pycache__/
+.venv*/
+venv/
 .env
 .env.*
 !.env.example
-!frontend/.env.development
-!frontend/.env.production
-frontend/.env.local
-frontend/.env.*.local
-
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-.pytest_cache/
-
-# Generated audio
-backend/**/*.wav
-backend/**/*.mp3
-
-# Editors and operating systems
-.vscode/*
-!.vscode/extensions.json
-.idea/
+.agents/
+.codex/
+.aws/
+*:Zone.Identifier
 .DS_Store
 Thumbs.db
-*.suo
-*.sw?
+*.log
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.ogg
+*.aac
+*.safetensors
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.pem
+*.key
+*.p12
+*.pfx
+data/cache/
+*.py[cod]
+.pytest_cache/
+models/**
+!models/MeloTTS/
+!models/MeloTTS/.gitkeep
+data/references/**
+!data/references/.gitkeep
+data/datasets/**
+!data/datasets/.gitkeep
+outputs/**
+!outputs/.gitkeep
+third_party/**
+!third_party/.gitkeep
 
-# Accidental generator output
-frontend/@/
+# Only the original upstream synthetic test fixture is source material.
+!backend/fixtures/test_audio.mp3

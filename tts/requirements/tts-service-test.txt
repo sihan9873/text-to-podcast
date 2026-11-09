@@ -1,0 +1,3 @@
+-r tts-service.txt
+# 可选 pytest runner；当前沙箱未安装/验证该 runner，测试由 unittest 执行。
+pytest>=8,<10

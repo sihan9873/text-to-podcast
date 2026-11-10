@@ -1,0 +1,56 @@
+{
+  "engine_id_requested": "qwen3-customvoice",
+  "status": "succeeded",
+  "scope": "业务HTTP任务闭环、生成元数据及MP3解码；发音、文本完整性和事实内容仍需人工审核",
+  "requires_real_qwen": true,
+  "project_id": 3,
+  "script_task_id": 5,
+  "script_generation": {
+    "provider": "local_http",
+    "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+    "simulated": false
+  },
+  "script_id": 3,
+  "script_title": "轻松介绍太阳系",
+  "sentence_count": 4,
+  "audio_task_id": 6,
+  "audio_result": {
+    "audio_version_id": 3,
+    "version": 1,
+    "selection_revision": 1,
+    "asset_id": 3,
+    "play_url": "/api/v1/audio-assets/3/play",
+    "download_url": "/api/v1/audio-assets/3/download",
+    "metadata": {
+      "provider": "local_http",
+      "engine_id": "qwen3-customvoice",
+      "format": "mp3",
+      "sample_rate": 24000,
+      "channels": 1,
+      "simulated": false,
+      "real_speech": true,
+      "script_simulated": false,
+      "sentence_count": 4,
+      "chunk_count": 4,
+      "turn_silence_ms": 250
+    }
+  },
+  "decoded_duration_seconds": 59.04,
+  "audio_bytes": 944685,
+  "file": "full.mp3",
+  "date": "2026-11-10",
+  "description": "写一段双人播客，介绍太阳系，语气轻松。",
+  "models": {
+    "llm": "Qwen/Qwen2.5-0.5B-Instruct",
+    "tts": "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+    "tts_sdk": "qwen-tts 0.1.1",
+    "torch": "2.10.0+cu128",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "tts_max_new_tokens": 2048
+  },
+  "limitations": [
+    "MP3 decoded successfully; pronunciation, full spoken-text coverage and voice distinction require human listening.",
+    "No model weights, generated audio, .env or environments are included in source. Existing TTS weights were reused without modification."
+  ]
+}

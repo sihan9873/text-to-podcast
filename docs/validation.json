@@ -1,0 +1,63 @@
+{
+  "date": "2026-11-10",
+  "scope": "Pre-commit regression tests for Qwen LLM/TTS integration, Conda service management and script export; real inference evidence is recorded separately.",
+  "backend": {
+    "environment": "podcast-backend",
+    "runner": "pytest",
+    "passed": 45,
+    "subtests_passed": 25,
+    "failed": 0,
+    "seconds": 7.52,
+    "warning": "Existing Starlette TestClient httpx deprecation; no dependency changes made"
+  },
+  "local_llm": {
+    "environment": "podcast-llm",
+    "runner": "unittest",
+    "passed": 5,
+    "failed": 0,
+    "seconds": 0.263
+  },
+  "tts": {
+    "environment": "podcast-tts-service",
+    "runner": "unittest",
+    "run": 24,
+    "passed": 23,
+    "skipped": 1,
+    "failed": 0,
+    "seconds": 0.525
+  },
+  "cross_module": {
+    "environment": "podcast-tts-service",
+    "runner": "unittest",
+    "passed": 6,
+    "failed": 0,
+    "seconds": 0.403
+  },
+  "total": {
+    "passed": 79,
+    "subtests_passed": 25,
+    "skipped_real_model": 1,
+    "failed": 0
+  },
+  "real_inference_evidence": {
+    "qwen_llm_and_mock_tts": "llm-validation.json",
+    "qwen_llm_and_real_tts": "qwen-validation.json",
+    "real_flow_already_verified": true,
+    "new_gpu_inference_during_precommit": false
+  },
+  "data_safety": "Backend tests use isolated temporary databases. Existing services, databases, .env files, weights and generated audio were not modified by this regression run. These runtime assets are excluded from Git.",
+  "execution_note": "ASGI and database regressions ran outside the restricted execution sandbox to permit local cross-thread communication. No temporary runtime patches were needed.",
+  "not_validated": [
+    "Human listening acceptance of pronunciation, spoken-text completeness and voice distinction",
+    "Frontend integration",
+    "MySQL server integration",
+    "LAN authentication/deployment",
+    "CPU inference performance"
+  ],
+  "commands": {
+    "backend": "cd backend && conda run --no-capture-output -n podcast-backend python -m pytest -q",
+    "local_llm": "cd llm && conda run --no-capture-output -n podcast-llm python -m unittest discover -s tests -v",
+    "tts": "cd tts && conda run --no-capture-output -n podcast-tts-service python -m unittest discover -s tests -v",
+    "cross_module": "from repo root: conda run --no-capture-output -n podcast-tts-service python -m unittest discover -s tests -v"
+  }
+}

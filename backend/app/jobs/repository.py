@@ -8,7 +8,9 @@ from sqlalchemy import func, select, update
 from app.core.common import BusinessError, new_token, utcnow
 from app.db.database import transaction
 from app.db.models import AudioVersion, LLMModel, Project, RoleProfile, Script, Task
+from app.db.seed import MODEL_ID
 from app.integrations.local_tts import audio_config
+from app.integrations.local_llm import SYSTEM_PROMPT, script_config
 from app.services.views import accepted, owned_project, script_view
 
 
@@ -33,12 +35,18 @@ def submit(session, user_id, project_id, task_type, body, key, settings):
         script = None
         audio = None
         if task_type == "script":
-            model = session.get(LLMModel, project.llm_model_id)
+            model = session.get(LLMModel, MODEL_ID)
+            if settings.llm_provider == "local_http":
+                model = session.scalar(select(LLMModel).where(LLMModel.provider_code == "local_http",
+                    LLMModel.model_code == settings.llm_model_id))
             if model is None or not model.enabled:
-                raise BusinessError("MODEL_UNAVAILABLE", "项目模型不可用")
+                raise BusinessError("MODEL_UNAVAILABLE", "项目模型不可用，请使用当前配置运行 bootstrap")
+            project.llm_model_id = model.id
+            snapshot["llm_config"] = script_config(settings)
+            snapshot["simulated"] = settings.llm_provider == "mock"
             snapshot["model"] = {"model_id": model.id, "provider_code": model.provider_code,
                                   "model_code": model.model_code, "params": deepcopy(model.params)}
-            snapshot["prompt"] = "mock-script-v1：返回预置测试脚本，不调用真实模型"
+            snapshot["prompt"] = SYSTEM_PROMPT if settings.llm_provider == "local_http" else "mock-script-v1：返回预置测试脚本，不调用真实模型"
             snapshot["roles"] = []
             for role in body.roles:
                 profile = session.get(RoleProfile, role.profile_id)

@@ -4,14 +4,21 @@ from sqlalchemy import func, select
 
 from app.core.common import BusinessError, iso, utcnow
 from app.db.database import transaction
-from app.db.models import Project
+from app.db.models import LLMModel, Project
 from app.db.seed import MODEL_ID
 from app.services.views import owned_project, project_view
 
 
-def create_project(session, user_id, title):
+def create_project(session, user_id, title, settings=None):
     with transaction(session):
-        project = Project(user_id=user_id, title=title, llm_model_id=MODEL_ID)
+        model_id = MODEL_ID
+        if settings is not None and settings.llm_provider == "local_http":
+            model = session.scalar(select(LLMModel).where(LLMModel.provider_code == "local_http",
+                LLMModel.model_code == settings.llm_model_id, LLMModel.enabled.is_(True)))
+            if model is None:
+                raise BusinessError("MODEL_UNAVAILABLE", "请使用当前 LLM 配置运行 bootstrap")
+            model_id = model.id
+        project = Project(user_id=user_id, title=title, llm_model_id=model_id)
         session.add(project)
         session.flush()
         return {"project_id": project.id, "title": project.title, "source_submitted": False,

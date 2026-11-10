@@ -1,0 +1,5 @@
+# 先由部署者准备兼容硬件的 PyTorch，不在这里安装/升级 torch。
+transformers==4.57.3
+huggingface-hub==0.36.2
+fastapi>=0.115,<1
+uvicorn>=0.30,<1

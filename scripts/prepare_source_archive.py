@@ -10,12 +10,12 @@ from pathlib import Path
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_DIRS = ("backend", "tts", "tests", "scripts", "docs")
+SOURCE_DIRS = ("backend", "tts", "llm", "tests", "scripts", "docs")
 SOURCE_FILES = ("README.md", "AGENTS.md", ".gitignore", ".gitattributes", "pytest.ini",
                 "tts/data/texts/example.txt", "tts/outputs/.gitkeep", "tts/third_party/.gitkeep",
                 "tts/models/MeloTTS/.gitkeep", "tts/data/references/.gitkeep", "tts/data/datasets/.gitkeep")
 EXCLUDED_DIRS = {".git", ".agents", ".codex", ".aws", "__pycache__", ".pytest_cache",
-                 "data", "outputs", "output", "models", "third_party", "venv", "node_modules"}
+                 "data", "outputs", "output", "models", "third_party", "venv", ".cache", "node_modules"}
 EXCLUDED_FILES = ("*.pyc", "*.pyo", "*.log", "*.sqlite*", "*.db", "*.db-*", "*.wav", "*.mp3",
                   "*.flac", "*.m4a", "*.ogg", "*.aac", "*.safetensors", "*.pth", "*.pt", "*.ckpt",
                   "*.onnx", "*.pem", "*.key", "*.p12", "*.pfx", "*:Zone.Identifier", ".DS_Store", "Thumbs.db")

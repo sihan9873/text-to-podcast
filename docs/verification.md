@@ -1,5 +1,9 @@
 # 单仓库完整启动与验证
 
+本机已有完整 Qwen 权重和 Conda 环境，直接运行真实模型请看
+[本机真实 Qwen 指南](local-qwen.md)。下文先介绍无权重的 Mock 验证；
+Mock 命令只生成测试音调。
+
 本仓库已经整合 backend 和 tts，不需要应用补丁，也不需要另克隆 Cabite 后端。
 以下使用 Linux/WSL Bash 和 Conda。三个服务进程需要三个独立终端。
 
@@ -40,9 +44,10 @@ cd "$BACKEND_ROOT"
 cp -n .env.example .env
 ```
 
-保留数据库/存储配置，确认 .env 的核心设置如下；示例文件默认已经如此：
+保留数据库/存储配置。下面先做无模型测试，需将真实模型示例中的对应项替换为：
 
 ```dotenv
+LLM_PROVIDER=mock
 AUDIO_PROVIDER=local_http
 LOCAL_TTS_BASE_URL=http://127.0.0.1:8001
 LOCAL_TTS_ENGINE_ID=mock
@@ -59,7 +64,7 @@ conda run --no-capture-output -n podcast-backend python -m app.bootstrap
 
 bootstrap 运行迁移并增量加入两个当前模型的本地角色，不覆盖旧角色和用户资产。
 
-## 3. 跑三组测试（都不使用真实模型）
+## 3. 跑四组测试（都不使用真实模型）
 
 ```bash
 cd "$BACKEND_ROOT"
@@ -68,9 +73,12 @@ cd "$TTS_ROOT"
 conda run --no-capture-output -n podcast-tts-service python -m unittest discover -s tests -v
 cd "$PROJECT_ROOT"
 conda run --no-capture-output -n podcast-tts-service python -m unittest discover -s tests -v
+cd "$PROJECT_ROOT/llm"
+conda run --no-capture-output -n podcast-llm python -m unittest discover -s tests -v
 ```
 
-真实 Qwen 测试默认跳过。三组分别验证业务数据库/Worker、TTS、跨模块桥接与工具。
+真实 Qwen TTS 测试默认跳过。四组分别验证业务数据库/Worker、TTS、跨模块桥接与工具、LLM服务。
+LLM 测试使用独立 podcast-llm 环境，准备方式见 [LLM 指南](local-llm.md)。
 根测试不会自动覆盖两个子项目；不要只在根运行一次 pytest 就认为全部通过。
 普通本机不用任何 /tmp 沙箱辅助。本次实际测试范围见 [记录](validation.json)。
 
@@ -121,7 +129,8 @@ conda run --no-capture-output -n podcast-tts-service python scripts/verify_backe
 
 脚本创建独立联调项目，读取实际角色 ID，提交原文、脚本任务，轮询并确认真实版本，
 再提交音频任务、下载并解码 MP3。outputs/backend-verification/ 下记录 report.json，
-成功时另有 full.mp3。失败退出码非零，报告保留已取得的项目/任务 ID。
+生成脚本后立即导出 script.json 和可读的 script.txt，音频成功时另有 full.mp3。
+失败退出码非零，报告保留已取得的项目/任务 ID，已导出的脚本也会保留。
 脚本不删除旧数据，不自动取消超时的上游推理，也不自动无限重试 POST。
 
 业务任务成功状态是 succeeded。元数据中 Mock 应为 simulated=true、real_speech=false。
@@ -152,8 +161,10 @@ conda run --no-capture-output -n podcast-tts-service python scripts/verify_backe
 
 如果 W 已停止，原任务会留在 queued；先恢复 W，让现有任务继续，不要立即多次重跑。
 客户端超时不代表模型或业务任务已取消，先通过原 task_id 查看结果再决定重提。
-真实 Qwen 资产应为 engine_id=qwen3-customvoice、simulated=false、real_speech=true；
-script_simulated 仍可为 true。完整 MP3 必须人工听音，确认台词顺序、双角色和间隔。
+真实 Qwen 验证命令现在同时检查脚本模型与语音模型，需按 [本地 Qwen LLM](local-llm.md)
+启用真实脚本服务后执行。资产应为 engine_id=qwen3-customvoice、simulated=false、
+real_speech=true、script_simulated=false。
+完整 MP3 必须人工听音，确认台词顺序、双角色和间隔。
 
 ## 7. 复核音频资产和保存证据
 

@@ -50,7 +50,10 @@ def publish_script(database, job, generated):
             text=line.text, speed=None, extra_params={}) for i, line in enumerate(generated.sentences)])
         project.current_script_id, task.script_id = script.id, script.id
         complete(task, project, {"script_id": script.id, "version": version,
-            "edit_revision": 1, "sentence_count": len(generated.sentences)})
+            "edit_revision": 1, "sentence_count": len(generated.sentences),
+            "generation": {"provider": job["snapshot"].get("llm_config", {}).get("provider", "mock"),
+                "model_id": job["snapshot"].get("model", {}).get("model_code"),
+                "simulated": job["snapshot"].get("simulated", True)}})
 
 
 def publish_audio(database, storage, job, generated):
@@ -74,7 +77,8 @@ def publish_audio(database, storage, job, generated):
             complete(task, project, {"audio_version_id": audio.id, "version": audio.version,
                 "selection_revision": 1, "asset_id": asset.id,
                 "play_url": f"/api/v1/audio-assets/{asset.id}/play",
-                "download_url": f"/api/v1/audio-assets/{asset.id}/download"})
+                "download_url": f"/api/v1/audio-assets/{asset.id}/download",
+                "metadata": deepcopy(generated.metadata)})
     except BaseException:
         storage.path(key).unlink(missing_ok=True)
         raise

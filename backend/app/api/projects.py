@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/v1/projects", tags=["项目模块"])
 
 @router.post("", status_code=201, response_model=Envelope[dict], summary="创建项目")
 def create(body: ProjectCreate, request: Request, session: SessionDep, user: UserDep):
-    return envelope(request, projects.create_project(session, user, body.title))
+    return envelope(request, projects.create_project(session, user, body.title, request.app.state.settings))
 
 
 @router.get("", response_model=Envelope[dict], summary="项目列表")

@@ -30,7 +30,7 @@ def create_app(settings=None):
         database.engine.dispose()
 
     app = FastAPI(title="TextCast 后端最小闭环", version="0.4.0", lifespan=lifespan,
-        description="固定开发身份，无登录认证。脚本服务仍为Mock；音频可配置Mock或独立本地TTS HTTP服务。")
+        description="固定开发身份，无登录认证。脚本和音频均可配置Mock或独立本地HTTP模型服务。")
     app.state.settings, app.state.database = settings, database
     app.state.storage = LocalStorage(settings.storage_dir)
     app.add_middleware(CORSMiddleware, allow_origins=[settings.cors_origin], allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
@@ -87,7 +87,9 @@ def create_app(settings=None):
             user = session.scalar(select(User).where(User.id == settings.development_user_id))
             if user is None:
                 raise BusinessError("NOT_INITIALIZED", "请先执行 python -m app.bootstrap", 503)
-        return {"status": "ready", "provider": settings.audio_provider, "authentication": "fixed_development_user"}
+        return {"status": "ready", "provider": settings.audio_provider, "llm_provider": settings.llm_provider,
+                "tts_engine_id": settings.tts_engine_id, "llm_model_id": settings.llm_model_id,
+                "authentication": "fixed_development_user"}
 
     app.include_router(projects.router)
     app.include_router(generation.router)

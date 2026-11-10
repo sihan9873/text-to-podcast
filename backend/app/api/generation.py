@@ -17,13 +17,13 @@ PathId = Annotated[int, Path(gt=0)]
 router = APIRouter(prefix="/api/v1")
 
 
-@router.post("/projects/{project_id}/script/generate", status_code=202, response_model=Envelope[TaskAccepted], tags=["脚本模块"], summary="提交模拟脚本任务（10秒）")
+@router.post("/projects/{project_id}/script/generate", status_code=202, response_model=Envelope[TaskAccepted], tags=["脚本模块"], summary="提交脚本生成任务")
 def generate_script(project_id: PathId, body: ScriptGenerate, request: Request, response: Response,
                     session: SessionDep, user: UserDep, key: IdempotencyDep):
     data, response.status_code = submit(session, user, project_id, "script", body, key, request.app.state.settings)
     response.headers["Location"] = data["status_url"]
     response.headers["Retry-After"] = "1"
-    return envelope(request, data, "模拟脚本任务")
+    return envelope(request, data, "脚本任务已提交，请轮询任务状态")
 
 
 @router.get("/scripts/{script_id}", response_model=Envelope[ScriptView], tags=["脚本模块"], summary="脚本详情")

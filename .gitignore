@@ -45,6 +45,8 @@ outputs/**
 !outputs/.gitkeep
 third_party/**
 !third_party/.gitkeep
+llm/models/
+llm/.cache/
 
 # Only the original upstream synthetic test fixture is source material.
 !backend/fixtures/test_audio.mp3

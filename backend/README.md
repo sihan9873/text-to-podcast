@@ -11,7 +11,8 @@ cp -n .env.example .env
 conda run --no-capture-output -n podcast-backend python -m app.bootstrap
 ```
 
-默认示例为 local_http + mock，TTS 地址 http://127.0.0.1:8001。
+部署示例选择真实 Qwen LLM 和 qwen3-customvoice TTS，TTS 地址 http://127.0.0.1:8001。
+本机已有环境与权重时，可直接按 [真实 Qwen 指南](../docs/local-qwen.md) 统一启动。
 需要带 libmp3lame 的 FFmpeg，由部署者准备，不自动安装。
 分别在两个终端启动 API 和 Worker：
 
@@ -24,7 +25,9 @@ conda run --no-capture-output -n podcast-backend python -m app.worker
 ```
 
 业务前缀 /api/v1。生成请求携带 Idempotency-Key，使用实际角色 ID、脚本版本和
-修订号。LLM 仍返回固定 Mock 脚本。若干配置接口为 501 预留，早期设计文档不能
+修订号。代码配置类保留 Mock 默认值，部署示例选择真实 Qwen；实际行为由 `.env`
+决定，可按 [Qwen LLM 指南](../docs/local-llm.md) 配置脚本模型。
+若干配置接口为 501 预留，早期设计文档不能
 替代运行时 /openapi.json。requirements.lock 是上游 Windows 历史记录。
 
 测试：`conda run --no-capture-output -n podcast-backend python -m pytest -q`。

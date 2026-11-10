@@ -27,6 +27,11 @@ class Settings:
     tts_turn_silence_ms: int = 250
     ffmpeg_binary: str = "ffmpeg"
     audio_encode_timeout_seconds: float = 60.0
+    llm_provider: str = "mock"
+    llm_base_url: str = "http://127.0.0.1:8002"
+    llm_model_id: str = "Qwen/Qwen2.5-0.5B-Instruct"
+    llm_timeout_seconds: float = 300.0
+    llm_max_new_tokens: int = 1536
 
     @classmethod
     def from_env(cls):
@@ -48,9 +53,26 @@ class Settings:
             tts_turn_silence_ms=int(os.getenv("LOCAL_TTS_TURN_SILENCE_MS", "250")),
             ffmpeg_binary=os.getenv("FFMPEG_BINARY", "ffmpeg"),
             audio_encode_timeout_seconds=float(os.getenv("AUDIO_ENCODE_TIMEOUT_SECONDS", "60")),
+            llm_provider=os.getenv("LLM_PROVIDER", "mock"),
+            llm_base_url=os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8002"),
+            llm_model_id=os.getenv("LOCAL_LLM_MODEL_ID", "Qwen/Qwen2.5-0.5B-Instruct"),
+            llm_timeout_seconds=float(os.getenv("LOCAL_LLM_TIMEOUT_SECONDS", "300")),
+            llm_max_new_tokens=int(os.getenv("LOCAL_LLM_MAX_NEW_TOKENS", "1536")),
         )
 
     def __post_init__(self):
+        if self.llm_provider not in ("mock", "local_http"):
+            raise ValueError("LLM_PROVIDER 必须为 mock 或 local_http")
+        llm_url = urlsplit(self.llm_base_url)
+        if (llm_url.scheme not in ("http", "https") or not llm_url.hostname or llm_url.username
+                or llm_url.password or llm_url.query or llm_url.fragment):
+            raise ValueError("LOCAL_LLM_BASE_URL 必须为不含凭据、查询参数和 fragment 的 HTTP(S) 地址")
+        if not self.llm_model_id.strip() or len(self.llm_model_id) > 128:
+            raise ValueError("LOCAL_LLM_MODEL_ID 无效")
+        if not math.isfinite(self.llm_timeout_seconds) or not 0 < self.llm_timeout_seconds <= 600:
+            raise ValueError("LOCAL_LLM_TIMEOUT_SECONDS 必须为 0–600 秒内的有限正数")
+        if not 128 <= self.llm_max_new_tokens <= 2048:
+            raise ValueError("LOCAL_LLM_MAX_NEW_TOKENS 必须为128到2048")
         if self.development_user_id < 1:
             raise ValueError("DEVELOPMENT_USER_ID 必须为正整数")
         if self.poll_seconds <= 0 or self.lease_seconds < 5 or self.max_pending_tasks < 1:

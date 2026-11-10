@@ -8,7 +8,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.common import BusinessError
 from app.core.config import Settings
 from app.db.database import Database
-from app.integrations.mock import MockScriptGenerator
+from app.integrations.contracts import AudioGenerator, ScriptGenerator
+from app.integrations.local_llm import script_generator_for_snapshot
 from app.integrations.local_tts import generator_for_snapshot
 from app.jobs import repository
 from app.jobs.handlers import publish_audio, publish_script
@@ -18,10 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 class Worker:
-    def __init__(self, database, settings, script_generator=None, audio_generator=None):
+    def __init__(self, database, settings, script_generator: ScriptGenerator | None = None,
+                 audio_generator: AudioGenerator | None = None):
         self.database, self.settings = database, settings
         self.storage = LocalStorage(settings.storage_dir)
-        self.script_generator = script_generator or MockScriptGenerator()
+        self.script_generator = script_generator
         self.audio_generator = audio_generator
 
     def renew(self, job, stopped):
@@ -41,7 +43,8 @@ class Worker:
         heart.start()
         try:
             if job["task_type"] == "script":
-                result = self.script_generator.generate(deepcopy(job["snapshot"]))
+                generator = self.script_generator if self.script_generator is not None else script_generator_for_snapshot(job["snapshot"])
+                result = generator.generate(deepcopy(job["snapshot"]))
                 publish_script(self.database, job, result)
             else:
                 # 按提交时的配置快照分派，不让 .env 改动改变已排队任务的模型。
@@ -64,7 +67,7 @@ class Worker:
 
     def run_forever(self):
         stopped = Event()
-        logger.info("Database worker started; script provider=mock; audio provider selected from each task snapshot")
+        logger.info("Database worker started; script/audio providers selected from each task snapshot")
         try:
             while True:
                 try:

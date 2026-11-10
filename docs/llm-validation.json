@@ -1,0 +1,91 @@
+{
+  "date": "2026-11-10",
+  "model": {
+    "id": "Qwen/Qwen2.5-0.5B-Instruct",
+    "revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+    "download_bytes": 999602607,
+    "weights_sha256": "fdf756fa7fcbe7404d5c60e26bff1a0c8b8aa1f72ced49e7dd0210fe288fb7fe",
+    "license": "Apache-2.0",
+    "gpu": "NVIDIA GeForce RTX 5060 Ti 16GB",
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "torch": "2.10.0+cu128",
+    "transformers": "4.57.3",
+    "huggingface_hub": "0.36.2"
+  },
+  "tests": {
+    "backend": {
+      "passed": 45,
+      "subtests_passed": 25,
+      "failed": 0,
+      "seconds": 7.97
+    },
+    "llm_no_model": {
+      "passed": 5,
+      "failed": 0
+    },
+    "tts": {
+      "passed": 23,
+      "skipped_real_tts": 1,
+      "failed": 0
+    },
+    "cross_module_and_delivery": {
+      "passed": 5,
+      "failed": 0
+    }
+  },
+  "real_llm_business_flow": {
+    "command": "conda run --no-capture-output -n podcast-backend python scripts/verify_local_llm.py",
+    "scope": "Real TCP Qwen LLM + backend API/Worker/temporary SQLite + Mock TTS + MP3 decoding",
+    "status": "succeeded",
+    "description": "写一段双人中文播客，给初学者介绍太阳系，4到6条简短台词，语气轻松。",
+    "script_title": "介绍太阳系，让初学者轻松了解",
+    "sentence_count": 3,
+    "script_simulated": false,
+    "audio_simulated": true,
+    "audio_real_speech": false,
+    "mp3_bytes": 21165,
+    "decoded_audio_seconds": 1.32,
+    "flow_seconds": 13.209,
+    "timing_note": "One cold model process, includes task polling, LLM loading/inference and Mock audio pipeline; not a steady-state benchmark."
+  },
+  "limitations": [
+    "0.5B output may violate requested sentence counts, contain factual errors, or fail structured validation; script requires human review.",
+    "No real Qwen TTS inference or audio quality acceptance in this change.",
+    "CPU inference performance, frontend integration, MySQL and LAN authentication were not validated.",
+    "One demo prompt failed strict structured validation; no fake fallback was used. The backend prompt succeeded in the isolated real business flow.",
+    "Model ID/configuration is snapshotted; externally replacing service weights at the same URL is not prevented by the backend. Download revision and hashes identify the local tested model."
+  ],
+  "safety": "Original CUDA/PyTorch and podcast-tts environment unchanged. podcast-llm was created by offline cloning; package imports resolve within the new Conda prefix. The old llm/.venv has been removed. Isolated tests used temporary databases; starting local services initialized the configured local database and the live flow created one verification project. Weights, environment, .env and audio outputs remain excluded from source.",
+  "conda_migration": {
+    "date": "2026-11-10",
+    "environment": "podcast-llm",
+    "creation": "conda create --name podcast-llm --clone podcast-tts --offline --yes",
+    "python": "3.12.15",
+    "torch": "2.10.0+cu128",
+    "transformers": "4.57.3",
+    "independent_package_prefix_verified": true,
+    "old_venv_removed": true,
+    "llm_unit_tests_passed": 5,
+    "isolated_real_gpu_tcp_flow": {
+      "status": "succeeded",
+      "seconds": 17.248,
+      "script_simulated": false,
+      "audio_simulated": true
+    },
+    "running_service_flow": {
+      "status": "succeeded",
+      "project_id": 1,
+      "script_task_id": 1,
+      "audio_task_id": 2,
+      "mp3_bytes": 21165
+    },
+    "supervision": {
+      "type": "systemd user transient unit",
+      "unit": "text-to-podcast-local.service",
+      "active": true,
+      "restarts_at_verification": 0,
+      "boot_autostart_enabled": false
+    }
+  }
+}

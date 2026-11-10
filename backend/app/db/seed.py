@@ -13,6 +13,14 @@ def seed(database, settings):
             session.flush()
         if session.get(LLMModel, MODEL_ID) is None:
             session.add(LLMModel(id=MODEL_ID, name="固定测试脚本服务", provider_code="mock", model_code="mock-script-v1", params={"simulated": True}))
+        if settings.llm_provider == "local_http":
+            # 保留原有 Mock 行及历史项目，只增量注册当前部署模型。
+            session.flush()
+            local_model = session.scalar(select(LLMModel).where(LLMModel.provider_code == "local_http",
+                LLMModel.model_code == settings.llm_model_id))
+            if local_model is None:
+                session.add(LLMModel(name=settings.llm_model_id, provider_code="local_http",
+                    model_code=settings.llm_model_id, params={"simulated": False}))
         if session.get(RoleProfile, ROLE_ID) is None:
             session.add(RoleProfile(id=ROLE_ID, user_id=settings.development_user_id, name="测试主持人",
                 description="用于框架联调的固定测试角色", voice_config={"tts_provider": "mock", "tts_model": "mock-audio-v1", "voice_id": "test-tone", "style": None, "speed": 1.0, "extra_params": {}}))

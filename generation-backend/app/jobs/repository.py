@@ -8,6 +8,8 @@ from sqlalchemy import func, select, update
 from app.core.common import BusinessError, new_token, utcnow
 from app.db.database import transaction
 from app.db.models import AudioVersion, LLMModel, Project, RoleProfile, Script, Task
+from app.integrations.local_llm import SYSTEM_PROMPT, script_config
+from app.integrations.local_tts import audio_config
 from app.services.views import accepted, owned_project, script_view
 
 
@@ -37,7 +39,10 @@ def submit(session, user_id, project_id, task_type, body, key, settings):
                 raise BusinessError("MODEL_UNAVAILABLE", "项目模型不可用")
             snapshot["model"] = {"model_id": model.id, "provider_code": model.provider_code,
                                   "model_code": model.model_code, "params": deepcopy(model.params)}
-            snapshot["prompt"] = "mock-script-v1：返回预置测试脚本，不调用真实模型"
+            snapshot["prompt"] = (SYSTEM_PROMPT if settings.llm_provider == "local_http"
+                                  else "mock-script-v1：返回预置测试脚本，不调用真实模型")
+            snapshot["llm_config"] = script_config(settings)
+            snapshot["simulated"] = settings.llm_provider == "mock"
             snapshot["roles"] = []
             for role in body.roles:
                 profile = session.get(RoleProfile, role.profile_id)
@@ -54,10 +59,13 @@ def submit(session, user_id, project_id, task_type, body, key, settings):
             if script.status != "confirmed" or project.confirmed_script_id != script.id or script.confirmed_revision != script.edit_revision:
                 raise BusinessError("SCRIPT_NOT_CONFIRMED", "请先确认该脚本")
             snapshot["script"] = script_view(session, script)
+            snapshot["audio_config"] = audio_config(settings)
+            snapshot["simulated"] = snapshot["audio_config"]["simulated"]
             version = (session.scalar(select(func.max(AudioVersion.version)).where(AudioVersion.project_id == project.id)) or 0) + 1
             audio = AudioVersion(project_id=project.id, script_id=script.id, version=version,
                 script_edit_revision=script.edit_revision, script_snapshot=deepcopy(snapshot["script"]),
-                config_snapshot={"roles": deepcopy(snapshot["script"]["roles"]), "provider": "mock", "simulated": True})
+                config_snapshot={"roles": deepcopy(snapshot["script"]["roles"]),
+                                 **deepcopy(snapshot["audio_config"])})
             session.add(audio)
             session.flush()
         task = Task(user_id=user_id, project_id=project.id, task_type=task_type,

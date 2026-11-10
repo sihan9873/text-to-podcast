@@ -8,7 +8,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.common import BusinessError
 from app.core.config import Settings
 from app.db.database import Database
-from app.integrations.mock import MockAudioGenerator, MockScriptGenerator
+from app.integrations.local_llm import script_generator_for_snapshot
+from app.integrations.local_tts import generator_for_snapshot
 from app.jobs import repository
 from app.jobs.handlers import publish_audio, publish_script
 from app.storage import LocalStorage
@@ -20,8 +21,8 @@ class Worker:
     def __init__(self, database, settings, script_generator=None, audio_generator=None):
         self.database, self.settings = database, settings
         self.storage = LocalStorage(settings.storage_dir)
-        self.script_generator = script_generator or MockScriptGenerator()
-        self.audio_generator = audio_generator or MockAudioGenerator()
+        self.script_generator = script_generator
+        self.audio_generator = audio_generator
 
     def renew(self, job, stopped):
         while not stopped.wait(max(1, self.settings.lease_seconds / 3)):
@@ -40,10 +41,12 @@ class Worker:
         heart.start()
         try:
             if job["task_type"] == "script":
-                result = self.script_generator.generate(deepcopy(job["snapshot"]))
+                generator = self.script_generator or script_generator_for_snapshot(job["snapshot"])
+                result = generator.generate(deepcopy(job["snapshot"]))
                 publish_script(self.database, job, result)
             else:
-                result = self.audio_generator.generate(deepcopy(job["snapshot"]))
+                generator = self.audio_generator or generator_for_snapshot(job["snapshot"])
+                result = generator.generate(deepcopy(job["snapshot"]))
                 publish_audio(self.database, self.storage, job, result)
             logger.info("Task completed: id=%s type=%s", job["id"], job["task_type"])
         except KeyboardInterrupt:

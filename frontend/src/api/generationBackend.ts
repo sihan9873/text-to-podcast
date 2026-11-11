@@ -2,7 +2,7 @@ export async function generationRequest<T>(path: string, method = "GET", body?: 
   const headers = new Headers()
   if (body !== undefined) headers.set("Content-Type", "application/json")
   if (task) headers.set("Idempotency-Key", crypto.randomUUID())
-  const response = await fetch("/generation" + path, {
+  const response = await fetch("/api/v1" + path, {
     method, headers, credentials: "same-origin",
     body: body === undefined ? undefined : JSON.stringify(body),
   })

@@ -109,8 +109,12 @@ export default function PodcastWorkflow({ projectId }: { projectId: number }) {
             finally { await open(project.project_id) }
           })}>查看任务进度</button>}
           {asset && <div className="space-y-2">
-            <audio controls src={"/generation/audio-assets/" + asset + "/play"} />
-            <a className="underline" href={"/generation/audio-assets/" + asset + "/download"}>下载 MP3</a>
+            <audio
+              controls
+              src={"/api/v1/audio-assets/" + asset + "/play"}
+              onError={() => setError("音频加载失败：请确认已登录后重试")}
+            />
+            <a className="underline" href={"/api/v1/audio-assets/" + asset + "/download"}>下载 MP3</a>
           </div>}
         </>}
       </fieldset>

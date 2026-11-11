@@ -5,12 +5,28 @@ import tailwindcss from "@tailwindcss/vite";
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  server: {
+    server: {
     proxy: {
-      "/api": "http://127.0.0.1:8000",
-      "/generation": {
-        target: "http://127.0.0.1:8001",
-        rewrite: path => path.replace(/^\/generation/, "/api/v1"),
+      '/api/auth': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        cookieDomainRewrite: 'localhost',
+      },
+      '/api/admin': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        cookieDomainRewrite: 'localhost',
+      },
+      '/api': {
+        target: 'http://127.0.0.1:8001',
+        changeOrigin: true,
+        cookieDomainRewrite: 'localhost',
+      },
+      '/generation': {
+        target: 'http://127.0.0.1:8001',
+        changeOrigin: true,
+        cookieDomainRewrite: 'localhost',
+        rewrite: path => path.replace(/^\/generation/, '/api/v1'),
       },
     },
   },

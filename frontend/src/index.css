@@ -31,6 +31,7 @@
 
   --radius: 0.75rem;
 }
+
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -59,6 +60,23 @@
 }
 
 /* 3) Base styles */
+/* Lock the document only inside the application; auth pages keep normal scrolling. */
+html.app-shell-active {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html.app-shell-active body {
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html.app-shell-active #root {
+  height: 100dvh;
+}
+
 @layer base {
   * {
     @apply border-border;
@@ -67,3 +85,4 @@
     @apply bg-background text-foreground antialiased;
   }
 }
+

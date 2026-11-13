@@ -3,17 +3,10 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "packageManager": "pnpm@11.25.0",
-  "engines": {
-    "node": ">=22.12.0",
-    "pnpm": ">=11.0.0"
-  },
   "scripts": {
     "dev": "vite",
-    "typecheck": "tsc -b",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "check": "pnpm lint && pnpm build",
     "preview": "vite preview"
   },
   "dependencies": {

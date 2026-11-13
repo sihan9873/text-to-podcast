@@ -1,0 +1,20 @@
+﻿import assert from 'node:assert/strict';
+import { dispatch } from '../src/mocks/server.ts';
+const request = async (path, method = 'GET', body) => {
+ const res = await dispatch(new Request(`http://localhost/api${path}`, { method, headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) }));
+ return { status: res.status, ...await res.json() };
+};
+assert.equal((await request('/auth/me')).code, 'UNAUTHENTICATED');
+assert.equal((await request('/projects')).status, 401);
+assert.equal((await request('/auth/register', 'POST', { username: 'x', password: 'short' })).status, 422);
+const account = { username: 'test_creator', password: 'TestPassword123', display_name: '测试创作者' };
+assert.equal((await request('/auth/register', 'POST', account)).status, 201);
+assert.equal((await request('/auth/me')).status, 401, 'Registration must not sign in');
+assert.equal((await request('/auth/register', 'POST', account)).code, 'USERNAME_EXISTS');
+assert.equal((await request('/auth/login', 'POST', { ...account, password: 'wrong_password' })).code, 'INVALID_CREDENTIALS');
+const session = await request('/auth/login', 'POST', account); assert.ok(session.data.csrf_token);
+assert.equal((await request('/auth/me')).data.user.display_name, account.display_name);
+assert.equal((await request('/projects')).status, 200);
+assert.equal((await request('/auth/logout', 'POST')).data.logged_out, true);
+assert.equal((await request('/projects')).status, 401);
+console.log('PASS: registration, validation, duplicate user, no automatic login, invalid password, session, protected API, logout');

@@ -5,6 +5,8 @@ import {
   ChevronsRight,
   FolderKanban,
   LayoutDashboard,
+  Plus,
+  Loader2,
   Settings,
   Users,
   X,
@@ -23,6 +25,7 @@ export interface AppSidebarItem {
 }
 
 export interface AppSidebarSection {
+  showCreateProject?: boolean
   title?: string
   items: AppSidebarItem[]
 }
@@ -61,6 +64,8 @@ export interface AppSidebarProps extends React.HTMLAttributes<HTMLElement> {
   onClose?: () => void
   /** Brand name shown at the top. */
   brand?: string
+  onCreateProject?: () => void | Promise<void>
+  creatingProject?: boolean
 }
 
 function isActive(activePath: string | undefined, href: string) {
@@ -81,6 +86,8 @@ const AppSidebar = React.forwardRef<HTMLElement, AppSidebarProps>(
       open = false,
       onClose,
       brand = "Studio",
+      onCreateProject,
+      creatingProject = false,
       ...props
     },
     ref
@@ -111,9 +118,9 @@ const AppSidebar = React.forwardRef<HTMLElement, AppSidebarProps>(
         <aside
           ref={ref}
           className={cn(
-            "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border bg-card",
+            "fixed inset-y-0 left-0 z-50 flex h-dvh min-h-0 w-64 flex-col overflow-hidden border-r border-border bg-card",
             "transition-[transform,width] duration-300 ease-out",
-            "lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:translate-x-0",
+            "lg:static lg:z-20 lg:shrink-0 lg:translate-x-0",
             open ? "translate-x-0" : "-translate-x-full",
             collapsed && "lg:w-[72px]",
             className
@@ -133,6 +140,7 @@ const AppSidebar = React.forwardRef<HTMLElement, AppSidebarProps>(
                 )}
               >
                 {brand}
+                <span aria-hidden="true" className="text-primary">.</span>
               </span>
             </div>
             <AppButton
@@ -149,21 +157,31 @@ const AppSidebar = React.forwardRef<HTMLElement, AppSidebarProps>(
           {/* Navigation */}
           <nav
             aria-label="Main"
-            className="flex-1 space-y-6 overflow-y-auto px-3 py-5"
+            className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-3 py-5"
           >
             {sections.map((section, i) => (
               <div key={section.title ?? i} className="space-y-1">
-                {section.title && (
-                  <p
-                    className={cn(
-                      "px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70",
-                      hideWhenCollapsed
+                {(section.title || (section.showCreateProject && onCreateProject)) && (
+                  <div className={cn('flex items-center justify-between gap-2 px-3 pb-1', collapsed && 'lg:justify-center lg:px-0')}>
+                    {section.title && <p className={cn('text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70', hideWhenCollapsed)}>{section.title}</p>}
+                    {section.showCreateProject && onCreateProject && (
+                      <AppButton
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 shrink-0"
+                        aria-label={creatingProject ? '正在创建项目' : '新建项目'}
+                        title="新建项目"
+                        disabled={creatingProject}
+                        onClick={async () => {
+                          await onCreateProject()
+                          onClose?.()
+                        }}
+                      >
+                        {creatingProject ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                      </AppButton>
                     )}
-                  >
-                    {section.title}
-                  </p>
+                  </div>
                 )}
-
                 {section.items.map((item) => {
                   const active = isActive(activePath, item.href)
                   const Icon = item.icon

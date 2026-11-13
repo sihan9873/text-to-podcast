@@ -57,7 +57,7 @@ const AppNavbar = React.forwardRef<HTMLElement, AppNavbarProps>(
       <header
         ref={ref}
         className={cn(
-          "sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border",
+          "relative z-30 flex h-16 shrink-0 items-center gap-3 border-b border-border",
           "bg-background/75 px-4 backdrop-blur-md md:px-6",
           className
         )}
@@ -75,11 +75,10 @@ const AppNavbar = React.forwardRef<HTMLElement, AppNavbarProps>(
 
         <span className="text-base font-semibold tracking-tight">
           {title}
-          <span className="text-primary">.</span>
         </span>
 
-        {/* Search */}
-        <form
+        {/* Search is shown only when the page provides a search handler. */}
+        {onSearch && <form
           role="search"
           className="mx-auto hidden w-full max-w-md md:block"
           onSubmit={(e) => {
@@ -102,9 +101,9 @@ const AppNavbar = React.forwardRef<HTMLElement, AppNavbarProps>(
               )}
             />
           </label>
-        </form>
+        </form>}
 
-        <div className="ml-auto flex items-center gap-2 md:ml-0">
+        <div className="ml-auto flex items-center gap-2">
           {actions}
 
           <AppButton

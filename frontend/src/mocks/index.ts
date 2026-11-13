@@ -1,12 +1,5 @@
-export async function enableMocking() {
-  const enabled = import.meta.env.VITE_ENABLE_MOCK === "true";
-  if (!enabled) return;
-
-  if (import.meta.env.MODE !== "development") {
-    throw new Error("Mock 只允许在开发环境启用");
-  }
-
-  const { worker } = await import("./browser");
-
-  await worker.start();
+﻿export async function enableMocking() {
+  if (!import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK === 'false') return;
+  const { worker } = await import('./browser');
+  await worker.start({ serviceWorker: { url: `${import.meta.env.BASE_URL}mockServiceWorker.js` }, onUnhandledFrame: 'bypass' });
 }

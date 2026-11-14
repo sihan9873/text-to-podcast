@@ -1,6 +1,6 @@
 // src/Project.tsx
 import * as React from "react"
-import { FileText, Loader2, AlertCircle } from "lucide-react"
+import { FileText, Upload, Loader2, AlertCircle } from "lucide-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { cn } from "@/lib/utils"
@@ -14,12 +14,12 @@ import {
   tasksApi,
   ApiError,
   newIdempotencyKey,
-  type ProjectDetail,
+  //type ProjectDetail,
   type ScriptListItem,
   type AudioVersionListItem,
   type ActiveTaskSummary,
   type RoleProfileItem,
-  type TaskAccepted,
+  //type TaskAccepted,
   type TaskDetail,
 } from "@/api"
 
@@ -400,6 +400,10 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
   const [pasteContent, setPasteContent] = React.useState("")
   const [showPaste, setShowPaste] = React.useState(false)
   const [submittingSource, setSubmittingSource] = React.useState(false)
+  const [draggingFile, setDraggingFile] = React.useState(false)
+  const [uploadError, setUploadError] = React.useState<string | null>(null)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const sourceBusy = React.useRef(false)
   const [showGenerate, setShowGenerate] = React.useState(false)
 
   // 是否有进行中的脚本生成任务（来自 P-03 active_tasks）
@@ -426,29 +430,43 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
 
   // ---------- 提交原文 ----------
   const submitText = async (text: string) => {
+    if (sourceBusy.current || project?.source_submitted) return
+    sourceBusy.current = true
+    setUploadError(null)
     setSubmittingSource(true)
     try {
       await projectsApi.submitSource(projectId, { text })
-      queryClient.invalidateQueries({ queryKey: ["project", projectId] })
+      await queryClient.invalidateQueries({ queryKey: ["project", projectId] })
       setShowPaste(false)
       setPasteContent("")
     } catch (e) {
       alert(e instanceof ApiError ? e.message : "提交失败")
     } finally {
+      sourceBusy.current = false
       setSubmittingSource(false)
     }
   }
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  const handleFileUpload = async (file: File) => {
+    if (sourceBusy.current || project?.source_submitted) return
+    setUploadError(null)
+    if (!file.name.toLowerCase().endsWith(".txt")) {
+      setUploadError("请上传 TXT 格式的文本文件。")
+      return
+    }
+    if (!file.size) {
+      setUploadError("文件内容为空，请选择有内容的 TXT 文件。")
+      return
+    }
+    sourceBusy.current = true
     setSubmittingSource(true)
     try {
       await projectsApi.uploadSource(projectId, file)
-      queryClient.invalidateQueries({ queryKey: ["project", projectId] })
+      await queryClient.invalidateQueries({ queryKey: ["project", projectId] })
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : "上传失败")
+      setUploadError(e instanceof ApiError ? e.message : "上传失败，请重试。")
     } finally {
+      sourceBusy.current = false
       setSubmittingSource(false)
     }
   }
@@ -536,26 +554,61 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
                 上传 TXT 文件或粘贴原文，提交后即锁定。
               </p>
 
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <label>
-                  <input
+              <input
+                    ref={fileInputRef}
                     type="file"
                     accept=".txt"
-                    className="sr-only"
-                    onChange={handleFileUpload}
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0]
+                      event.target.value = ""
+                      if (file) void handleFileUpload(file)
+                    }}
                     disabled={submittingSource}
                   />
-                  <AppButton asChild disabled={submittingSource}>
-                    <span>
-                      {submittingSource ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <FileText className="size-4" />
-                      )}
-                      上传 TXT
-                    </span>
-                  </AppButton>
-                </label>
+              <button
+                type="button"
+                disabled={submittingSource}
+                aria-busy={submittingSource}
+                aria-describedby={uploadError ? "source-upload-error" : undefined}
+                onClick={() => fileInputRef.current?.click()}
+                onDragEnter={(event) => {
+                  event.preventDefault()
+                  if (!submittingSource) setDraggingFile(true)
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = submittingSource ? "none" : "copy"
+                }}
+                onDragLeave={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingFile(false)
+                }}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  setDraggingFile(false)
+                  if (submittingSource) return
+                  const files = event.dataTransfer.files
+                  if (files.length !== 1) {
+                    setUploadError("请一次上传一个 TXT 文件。")
+                    return
+                  }
+                  void handleFileUpload(files[0])
+                }}
+                className={cn(
+                  "mt-4 flex w-full flex-col items-center gap-2 rounded-xl border-2 border-dashed px-6 py-9 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60",
+                  draggingFile ? "border-primary bg-primary/10" : "border-border bg-secondary/20 hover:border-primary/50 hover:bg-primary/5",
+                )}
+              >
+                <span className="pointer-events-none flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  {submittingSource ? <Loader2 className="size-5 animate-spin" /> : <Upload className="size-5" />}
+                </span>
+                <span className="pointer-events-none text-sm font-medium">
+                  {submittingSource ? "正在上传并提交原文…" : draggingFile ? "松开以上传 TXT 文件" : "拖拽 TXT 文件到这里，或点击选择文件"}
+                </span>
+                <span className="pointer-events-none text-xs text-muted-foreground">仅支持单个 .txt 文件，上传成功后原文将锁定</span>
+              </button>
+              {uploadError && <p id="source-upload-error" role="alert" className="mt-2 text-sm text-destructive">{uploadError}</p>}
+              <div className="mt-4 flex flex-wrap items-center gap-3">
                 <AppButton
                   variant="outline"
                   onClick={() => setShowPaste((v) => !v)}

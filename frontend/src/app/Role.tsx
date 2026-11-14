@@ -15,6 +15,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 import { AppButton } from "@/components/common/AppButton"
 import { AppCard, AppCardContent } from "@/components/common/AppCard"
+import { RoleAvatar, hashToneIndex } from "@/components/common/RoleAvatar"
 
 import {
   configApi,
@@ -151,6 +152,7 @@ export default function RolesPage() {
                   key={role.profile_id}
                   className="flex flex-wrap items-center gap-3 px-5 py-4"
                 >
+                  <RoleAvatar name={role.name} toneIndex={hashToneIndex(role.name)} size="lg" />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium">{role.name}</span>
@@ -315,7 +317,7 @@ function fromRole(role: RoleProfileItem): RoleFormState {
 
 function RoleFormDialog({ role, onClose, onSaved }: RoleFormDialogProps) {
   const isEdit = !!role
-  const queryClient = useQueryClient()
+  //const queryClient = useQueryClient()
 
   const {
     data: voicesData,

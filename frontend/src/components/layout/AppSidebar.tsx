@@ -22,11 +22,13 @@ export interface AppSidebarItem {
   icon?: LucideIcon
   /** Small count/label shown on the right (hidden when collapsed). */
   badge?: string | number
+  badgeLabel?: string
 }
 
 export interface AppSidebarSection {
   showCreateProject?: boolean
   title?: string
+  href?: string
   items: AppSidebarItem[]
 }
 
@@ -163,7 +165,26 @@ const AppSidebar = React.forwardRef<HTMLElement, AppSidebarProps>(
               <div key={section.title ?? i} className="space-y-1">
                 {(section.title || (section.showCreateProject && onCreateProject)) && (
                   <div className={cn('flex items-center justify-between gap-2 px-3 pb-1', collapsed && 'lg:justify-center lg:px-0')}>
-                    {section.title && <p className={cn('text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70', hideWhenCollapsed)}>{section.title}</p>}
+                    {section.title && (section.href ? (
+                      <a
+                        href={section.href}
+                        aria-current={activePath === section.href ? "page" : undefined}
+                        onClick={(e) => {
+                          if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+                          if (onNavigate) {
+                            e.preventDefault()
+                            onNavigate(section.href!)
+                          }
+                          onClose?.()
+                        }}
+                        className={cn(
+                          'rounded-sm text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          hideWhenCollapsed,
+                        )}
+                      >
+                        {section.title}
+                      </a>
+                    ) : <p className={cn('text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70', hideWhenCollapsed)}>{section.title}</p>)}
                     {section.showCreateProject && onCreateProject && (
                       <AppButton
                         variant="ghost"
@@ -231,6 +252,8 @@ const AppSidebar = React.forwardRef<HTMLElement, AppSidebarProps>(
                       </span>
                       {item.badge !== undefined && (
                         <span
+                          title={item.badgeLabel}
+                          aria-label={item.badgeLabel}
                           className={cn(
                             "rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary",
                             hideWhenCollapsed

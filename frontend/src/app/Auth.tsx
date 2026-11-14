@@ -10,6 +10,7 @@ import { AppButton } from "@/components/common/AppButton"
 import { AppCard, AppCardContent } from "@/components/common/AppCard"
 
 import { authApi, ApiError } from "@/api"
+import { SoundWaveBackdrop } from "@/components/effects/SoundWaveBackdrop"
 
 type Mode = "login" | "register"
 
@@ -169,7 +170,8 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
+    <div className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-10">
+      <SoundWaveBackdrop />
       <div className="w-full max-w-md space-y-6">
         {/* Brand */}
         <div className="flex flex-col items-center gap-2 text-center">
@@ -399,7 +401,7 @@ function Field({
 
 function inputClass(hasError: boolean): string {
   return cn(
-    "h-10 w-full rounded-lg border bg-card px-3 text-sm",
+    "auth-input h-10 w-full rounded-lg border bg-background px-3 text-sm text-foreground",
     "placeholder:text-muted-foreground",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
     "disabled:cursor-not-allowed disabled:opacity-60",

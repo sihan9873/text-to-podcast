@@ -27,14 +27,15 @@ function durationLabel(seconds: number): string {
 export function SourceInputPanel({
   projectId,
   onSubmitted,
+  onGenerateRequested,
 }: {
   projectId: string
   onSubmitted: () => void | Promise<void>
+  onGenerateRequested: () => void
 }) {
   const [text, setText] = React.useState("")
   const [sourceType, setSourceType] = React.useState<SourceType>("text")
   const [sourceName, setSourceName] = React.useState<string | null>(null)
-  const [charsPerMinute, setCharsPerMinute] = React.useState(240)
   const [preview, setPreview] = React.useState<SourcePreview | null>(null)
   const [busy, setBusy] = React.useState<"preview" | "submit" | "file" | null>(null)
   const [dragging, setDragging] = React.useState(false)
@@ -42,14 +43,15 @@ export function SourceInputPanel({
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   const validation = React.useMemo(() => validateSourceText(text), [text])
+  const isLongDocument = validation.characterCount > DIRECT_LLM_MAX_CHARACTERS
   const invalidatePreview = () => setPreview(null)
   const body = React.useCallback((): SubmitSourceRequest => ({
     text,
     source_type: sourceType,
     source_name: sourceName,
     segmentation_mode: "auto",
-    chars_per_minute: charsPerMinute,
-  }), [charsPerMinute, sourceName, sourceType, text])
+    chars_per_minute: 240,
+  }), [sourceName, sourceType, text])
 
   const loadFile = async (file: File) => {
     setBusy("file")
@@ -83,15 +85,19 @@ export function SourceInputPanel({
     }
   }
 
-  const submit = async () => {
-    if (!preview) return
-    const processing = preview.chunk_count === 1 ? "完整原文" : `${preview.chunk_count} 个语义片段`
-    if (!window.confirm(`将提交并锁定${processing}，提交后不可修改。是否继续？`)) return
+  const submitAndGenerate = async () => {
+    if (validation.errors.length) {
+      setError(validation.errors[0].message)
+      return
+    }
+    const description = isLongDocument ? "长文本并自动进入连贯生成流程" : "原文并进入脚本生成设置"
+    if (!window.confirm(`将提交并锁定${description}，提交后不可修改。是否继续？`)) return
     setBusy("submit")
     setError(null)
     try {
       await projectsApi.submitSource(projectId, body())
       await onSubmitted()
+      onGenerateRequested()
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : "原文提交失败，请重试。")
     } finally {
@@ -179,35 +185,27 @@ export function SourceInputPanel({
         {validation.warnings.map((issue) => <p key={issue.code} className="mt-1 text-sm text-amber-600">{issue.message}</p>)}
       </div>
 
-      <div className="rounded-lg border border-border bg-secondary/20 px-4 py-3">
-        <p className="text-sm font-medium">自动适配大模型上下文</p>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          不超过 {DIRECT_LLM_MAX_CHARACTERS.toLocaleString("zh-CN")} 字符的内容保持完整；只有更长的内容才会沿 Markdown 标题、自然段和句子边界自动拆分。这里展示的是预处理结果，不是 AI 生成的脚本。
-        </p>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="text-sm">
-          <span className="mb-1 block font-medium">预计朗读速度</span>
-          <select value={charsPerMinute} onChange={(event) => { setCharsPerMinute(Number(event.target.value)); invalidatePreview() }} className="h-10 w-full rounded-lg border border-input bg-card px-3">
-            <option value={180}>舒缓 · 180 字/分钟</option>
-            <option value={240}>正常 · 240 字/分钟</option>
-            <option value={300}>较快 · 300 字/分钟</option>
-          </select>
-          <span className="mt-1 block text-xs text-muted-foreground">只用于估算原文时长，不决定是否分段。</span>
-        </label>
-      </div>
+      {isLongDocument && (
+        <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
+          <p className="text-sm font-medium">已识别为长文本</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            内容超过 {DIRECT_LLM_MAX_CHARACTERS.toLocaleString("zh-CN")} 字符。提交后系统会自动按语义边界分段，并由大模型依次完成概要提炼、全局大纲、带前文记忆的分节生成和统一润色。分段预览不会调用大模型。
+          </p>
+        </div>
+      )}
 
       {error && <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
 
       <div className="flex flex-wrap justify-end gap-2">
-        <AppButton variant="outline" onClick={() => void requestPreview()} disabled={busy !== null || validation.errors.length > 0}>
-          {busy === "preview" ? <Loader2 className="animate-spin" /> : <Eye />}
-          分析文本
-        </AppButton>
-        <AppButton onClick={() => void submit()} disabled={busy !== null || !preview}>
+        {isLongDocument && (
+          <AppButton variant="outline" onClick={() => void requestPreview()} disabled={busy !== null || validation.errors.length > 0}>
+            {busy === "preview" ? <Loader2 className="animate-spin" /> : <Eye />}
+            预览自动分段
+          </AppButton>
+        )}
+        <AppButton onClick={() => void submitAndGenerate()} disabled={busy !== null || validation.errors.length > 0}>
           {busy === "submit" && <Loader2 className="animate-spin" />}
-          确认提交并锁定
+          提交并生成脚本
         </AppButton>
       </div>
 

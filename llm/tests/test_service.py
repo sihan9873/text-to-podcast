@@ -27,8 +27,10 @@ class ServiceTests(unittest.TestCase):
         script = {"title": "早餐", "summary": "早餐介绍", "sentences": [
             {"role_key": "a", "text": "你好"}, {"role_key": "b", "text": "早上好"}]}
         self.assertEqual(parse_script("```json\n" + json.dumps(script) + "\n```", roles), script)
+        partial = {**script, "sentences": script["sentences"][:1]}
+        self.assertEqual(parse_script(json.dumps(partial), roles, require_all_roles=False), partial)
         for value in (json.dumps(script)[:-2], "前言" + json.dumps(script),
-                      json.dumps({**script, "sentences": script["sentences"][:1]}),
+                      json.dumps(partial),
                       json.dumps({**script, "unexpected": 1})):
             with self.assertRaises(ServiceError):
                 parse_script(value, roles)

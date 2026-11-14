@@ -14,7 +14,10 @@ from app.services.views import accepted, owned_project, script_view
 
 
 def submit(session, user_id, project_id, task_type, body, key, settings):
-    signature = json.dumps({"project_id": project_id, "type": task_type, "body": body.model_dump(mode="json")}, sort_keys=True)
+    # Defaults are excluded so adding an optional preference does not invalidate
+    # idempotency keys stored by an older compatible release.
+    signature = json.dumps({"project_id": project_id, "type": task_type,
+                            "body": body.model_dump(mode="json", exclude_defaults=True)}, sort_keys=True)
     request_hash = hashlib.sha256(signature.encode()).hexdigest()
     with transaction(session):
         project = owned_project(session, project_id, user_id, lock=True)
@@ -59,6 +62,11 @@ def submit(session, user_id, project_id, task_type, body, key, settings):
                                   else "mock-script-v1：返回预置测试脚本，不调用真实模型")
             snapshot["llm_config"] = script_config(settings)
             snapshot["simulated"] = settings.llm_provider == "mock"
+            snapshot["generation_preferences"] = {
+                "target_minutes": body.target_minutes,
+                "target_characters": min(5_000, body.target_minutes * 240),
+                "style": body.style.strip(),
+            }
             snapshot["roles"] = []
             for role in body.roles:
                 profile = session.get(RoleProfile, role.profile_id)
@@ -124,6 +132,15 @@ def heartbeat(database, task_id, token, settings):
         now = utcnow()
         session.execute(update(Task).where(Task.id == task_id, Task.status == "running", Task.lease_token == token)
             .values(heartbeat_at=now, lease_expires_at=now + timedelta(seconds=settings.lease_seconds)))
+
+
+def progress(database, task_id, token, stage, percent):
+    """Publish coarse pipeline progress without exposing model prompts or text."""
+    with database.sessions() as session, transaction(session):
+        changed = session.execute(update(Task).where(
+            Task.id == task_id, Task.status == "running", Task.lease_token == token,
+        ).values(stage=stage, progress=max(5, min(95, int(percent))), updated_at=utcnow())).rowcount
+        return changed == 1
 
 
 def fail(database, task_id, token, code, message):

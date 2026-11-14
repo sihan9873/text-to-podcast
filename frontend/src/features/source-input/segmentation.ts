@@ -1,5 +1,6 @@
 import type {
   SegmentationMode,
+  SourceBoundaryType,
   SourceChunkPreview,
   SourceType,
 } from "@/api/types"
@@ -20,6 +21,8 @@ export interface LocalSourcePlan {
 }
 
 const MAX_CHUNK_CHARACTERS = 5_000
+export const DIRECT_LLM_MAX_CHARACTERS = 5_000
+export const LONG_DOCUMENT_CHUNK_CHARACTERS = 3_500
 const MAX_SOURCE_CHUNKS = 2_000
 
 export function normalizeSource(text: string): string {
@@ -128,12 +131,16 @@ function splitOversized(block: string, sourceType: SourceType, limit: number): s
 
 export function segmentSourceLocally(text: string, options: SegmentSourceOptions): LocalSourcePlan {
   const sourceText = normalizeSource(text)
-  const target = Math.min(MAX_CHUNK_CHARACTERS, options.targetMinutes * options.charsPerMinute)
-  const pieces = blocksOf(sourceText, options.sourceType).flatMap((block) =>
-    splitOversized(block, options.sourceType, options.mode === "duration" ? target : MAX_CHUNK_CHARACTERS),
-  )
+  const target = options.mode === "auto"
+    ? LONG_DOCUMENT_CHUNK_CHARACTERS
+    : Math.min(MAX_CHUNK_CHARACTERS, options.targetMinutes * options.charsPerMinute)
+  const pieces = options.mode === "auto" && Array.from(sourceText).length <= DIRECT_LLM_MAX_CHARACTERS
+    ? [sourceText]
+    : blocksOf(sourceText, options.sourceType).flatMap((block) =>
+      splitOversized(block, options.sourceType, options.mode === "paragraph" ? MAX_CHUNK_CHARACTERS : target),
+    )
   const grouped: string[] = []
-  if (options.mode === "paragraph") {
+  if (options.mode === "paragraph" || (options.mode === "auto" && Array.from(sourceText).length <= DIRECT_LLM_MAX_CHARACTERS)) {
     grouped.push(...pieces)
   } else {
     let current = ""
@@ -160,7 +167,7 @@ export function segmentSourceLocally(text: string, options: SegmentSourceOptions
       text: chunk,
       character_count: Array.from(chunk).length,
       estimated_seconds: Math.max(1, Math.ceil(spoken * 60 / options.charsPerMinute)),
-      boundary_type: options.mode,
+      boundary_type: (options.mode === "auto" ? (grouped.length === 1 ? "complete" : "semantic") : options.mode) as SourceBoundaryType,
     }
   })
   return {

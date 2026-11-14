@@ -35,7 +35,7 @@ class SourceSubmit(Input):
     text: str = Field(min_length=1, max_length=100_000)
     source_type: Literal["text", "txt", "markdown"] = "text"
     source_name: str | None = Field(default=None, max_length=255)
-    segmentation_mode: Literal["paragraph", "duration"] = "paragraph"
+    segmentation_mode: Literal["auto", "paragraph", "duration"] = "auto"
     target_minutes: int = Field(default=5, ge=1, le=15)
     chars_per_minute: int = Field(default=240, ge=120, le=300)
 
@@ -66,6 +66,8 @@ class RoleChoice(Input):
 
 class ScriptGenerate(Input):
     roles: list[RoleChoice] = Field(min_length=1, max_length=8)
+    target_minutes: int = Field(default=10, ge=1, le=20)
+    style: str = Field(default="自然、清晰、连贯", min_length=1, max_length=200)
 
     @field_validator("roles")
     @classmethod
@@ -73,6 +75,14 @@ class ScriptGenerate(Input):
         if len({v.role_key for v in values}) != len(values):
             raise ValueError("角色标识不能重复")
         return values
+
+    @field_validator("style")
+    @classmethod
+    def normalize_style(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("主持风格不能为空")
+        return value
 
 
 class ConfirmScript(Input):

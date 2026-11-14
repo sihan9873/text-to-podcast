@@ -75,10 +75,10 @@ export async function dispatch(request: Request): Promise<Response> {
       const text = body.text;
       if (typeof text !== 'string' || !text.trim()) return fail('原文不能为空');
       const sourceType = (body.source_type ?? 'text') as SourceType;
-      const mode = (body.segmentation_mode ?? 'paragraph') as SegmentationMode;
+      const mode = (body.segmentation_mode ?? 'auto') as SegmentationMode;
       const targetMinutes = Number(body.target_minutes ?? 5);
       const charsPerMinute = Number(body.chars_per_minute ?? 240);
-      if (!['text', 'txt', 'markdown'].includes(sourceType) || !['paragraph', 'duration'].includes(mode)) return fail('分段参数无效', 422);
+      if (!['text', 'txt', 'markdown'].includes(sourceType) || !['auto', 'paragraph', 'duration'].includes(mode)) return fail('分段参数无效', 422);
       const plan = segmentSourceLocally(text, { sourceType, mode, targetMinutes, charsPerMinute });
       if (!plan.sourceText || plan.characterCount > 100_000) return fail('原文不能为空且不能超过 100000 字符', 422);
       const response = { project_id: key, source_text: plan.sourceText, source_type: sourceType, source_name: typeof body.source_name === 'string' ? body.source_name : null, source_asset_id: null, source_hash: child === 'preview' ? null : id('hash'), source_submitted: child !== 'preview', source_submitted_at: child === 'preview' ? null : now(), character_count: plan.characterCount, spoken_character_count: plan.spokenCharacterCount, estimated_seconds: plan.estimatedSeconds, segmentation_mode: mode, target_minutes: mode === 'duration' ? targetMinutes : null, chars_per_minute: charsPerMinute, chunk_count: plan.chunks.length, chunks: plan.chunks };

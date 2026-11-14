@@ -13,7 +13,7 @@ def test_normalizes_line_endings_and_control_characters():
 
 
 def test_paragraph_mode_preserves_natural_paragraph_order():
-    result = segment_source("第一自然段。\n\n第二自然段！\n\n第三自然段？")
+    result = segment_source("第一自然段。\n\n第二自然段！\n\n第三自然段？", mode="paragraph")
     assert [item["text"] for item in result["chunks"]] == [
         "第一自然段。", "第二自然段！", "第三自然段？",
     ]
@@ -39,7 +39,7 @@ def test_oversized_paragraph_splits_at_sentences_then_hard_limit():
 
 def test_markdown_keeps_heading_with_following_block_and_estimates_spoken_text():
     text = "# 标题\n\n这是[链接文字](https://example.com)和**重点**。\n\n## 下一节\n\n- 第一项\n- 第二项"
-    result = segment_source(text, source_type="markdown")
+    result = segment_source(text, source_type="markdown", mode="paragraph")
     assert result["chunk_count"] == 2
     assert result["chunks"][0]["text"].startswith("# 标题\n\n这是")
     assert result["chunks"][1]["text"].startswith("## 下一节")
@@ -51,6 +51,24 @@ def test_markdown_fenced_code_with_blank_lines_stays_in_one_block():
     result = segment_source(text, source_type="markdown")
     assert result["chunk_count"] == 1
     assert "print('a')\n\nprint('b')" in result["chunks"][0]["text"]
+
+
+def test_auto_mode_keeps_ordinary_text_intact_even_with_many_paragraphs():
+    text = "\n\n".join(["甲" * 1000, "乙" * 1000, "丙" * 1000, "丁" * 900])
+    result = segment_source(text)
+    assert result["chunk_count"] == 1
+    assert result["chunks"][0]["text"] == text
+    assert result["chunks"][0]["boundary_type"] == "complete"
+
+
+def test_auto_mode_only_splits_long_text_at_semantic_boundaries():
+    paragraphs = [character * 1800 for character in "甲乙丙丁"]
+    text = "\n\n".join(paragraphs)
+    result = segment_source(text)
+    assert result["chunk_count"] == 4
+    assert [item["text"] for item in result["chunks"]] == paragraphs
+    assert all(item["boundary_type"] == "semantic" for item in result["chunks"])
+    assert all(item["character_count"] <= 3500 for item in result["chunks"])
 
 
 def test_rejects_empty_invalid_options_and_oversized_source():

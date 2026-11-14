@@ -38,6 +38,7 @@ class GenerateRequest(Input):
     roles: list[Role] = Field(min_length=1, max_length=8)
     system_prompt: str = Field(min_length=1, max_length=4000)
     max_new_tokens: int = Field(default=1536, ge=128, le=2048)
+    require_all_roles: bool = True
 
     @field_validator("source_text", "system_prompt")
     @classmethod
@@ -65,7 +66,7 @@ class Script(Input):
     sentences: list[Sentence] = Field(min_length=1, max_length=200)
 
 
-def parse_script(text, roles):
+def parse_script(text, roles, require_all_roles=True):
     text = text.strip()
     # 允许模型包裹一层 Markdown；不截取子串或修补损坏/截断的 JSON。
     match = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
@@ -73,8 +74,10 @@ def parse_script(text, roles):
         text = match[1]
     try:
         script = Script.model_validate_json(text)
+        actual = {s.role_key for s in script.sentences}
+        allowed = {r.role_key for r in roles}
         if (not script.title.strip() or any(not s.text.strip() for s in script.sentences)
-                or {s.role_key for s in script.sentences} != {r.role_key for r in roles}
+                or not actual or not actual <= allowed or (require_all_roles and actual != allowed)
                 or sum(len(s.text) for s in script.sentences) > 5000):
             raise ValueError("invalid roles or text")
         return script.model_dump()
@@ -139,7 +142,8 @@ class QwenGenerator:
             eos = [eos] if isinstance(eos, int) else eos or []
             if len(tokens) >= request.max_new_tokens and int(tokens[-1]) not in eos:
                 raise ServiceError("output_truncated", "脚本输出达到 token 上限，请缩短要求或增加输出预算。", 502)
-            script = parse_script(self.tokenizer.decode(tokens, skip_special_tokens=True), request.roles)
+            script = parse_script(self.tokenizer.decode(tokens, skip_special_tokens=True), request.roles,
+                                  request.require_all_roles)
             return {"model_id": MODEL_ID, "simulated": False, "script": script}
         except ServiceError:
             raise

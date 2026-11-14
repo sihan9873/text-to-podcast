@@ -175,14 +175,15 @@ export interface SubmitSourceRequest {
 }
 
 export type SourceType = 'text' | 'txt' | 'markdown';
-export type SegmentationMode = 'paragraph' | 'duration';
+export type SegmentationMode = 'auto' | 'paragraph' | 'duration';
+export type SourceBoundaryType = SegmentationMode | 'complete' | 'semantic';
 
 export interface SourceChunkPreview {
   sequence: number;
   text: string;
   character_count: number;
   estimated_seconds: number;
-  boundary_type: SegmentationMode;
+  boundary_type: SourceBoundaryType;
 }
 
 export interface SourcePreview {
@@ -274,6 +275,8 @@ export interface ScriptDetail {
 
 export interface GenerateScriptRequest {
   roles: { profile_id: string; role_key: string }[];
+  target_minutes?: number;
+  style?: string;
 }
 
 export interface ScriptListItem {

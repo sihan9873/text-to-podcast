@@ -41,7 +41,12 @@ class Worker:
         heart.start()
         try:
             if job["task_type"] == "script":
-                generator = self.script_generator or script_generator_for_snapshot(job["snapshot"])
+                generator = self.script_generator or script_generator_for_snapshot(
+                    job["snapshot"],
+                    lambda stage, percent: repository.progress(
+                        self.database, job["id"], job["token"], stage, percent,
+                    ),
+                )
                 result = generator.generate(deepcopy(job["snapshot"]))
                 publish_script(self.database, job, result)
             else:

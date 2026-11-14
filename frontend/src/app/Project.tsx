@@ -224,6 +224,8 @@ interface GenerateDialogProps {
 
 function GenerateDialog({ projectId, onClose, onSubmitted }: GenerateDialogProps) {
   const [selected, setSelected] = React.useState<string[]>([])
+  const [targetMinutes, setTargetMinutes] = React.useState(10)
+  const [style, setStyle] = React.useState("自然、清晰、连贯")
   const [submitting, setSubmitting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -237,7 +239,7 @@ function GenerateDialog({ projectId, onClose, onSubmitted }: GenerateDialogProps
   })
 
   const roles: RoleProfileItem[] = rolesData?.items ?? []
-  const canSubmit = selected.length >= 1 && selected.length <= 8 && !submitting
+  const canSubmit = selected.length >= 1 && selected.length <= 8 && style.trim().length > 0 && !submitting
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -260,7 +262,7 @@ function GenerateDialog({ projectId, onClose, onSubmitted }: GenerateDialogProps
       })
       await scriptsApi.generate(
         projectId,
-        { roles: payloadRoles },
+        { roles: payloadRoles, target_minutes: targetMinutes, style: style.trim() },
         newIdempotencyKey(),
       )
       onSubmitted()
@@ -293,10 +295,37 @@ function GenerateDialog({ projectId, onClose, onSubmitted }: GenerateDialogProps
       >
         <h2 className="text-lg font-semibold">生成脚本</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          选择 1–8 个角色模板，生成后将创建新脚本版本。
+          设置整期节目目标，长文本将先建立全局大纲，再带着前文记忆分节生成。
         </p>
 
-        <div className="mt-4 max-h-80 overflow-y-auto rounded-lg border border-border">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm">
+            <span className="mb-1 block font-medium">目标节目时长</span>
+            <select
+              value={targetMinutes}
+              disabled={submitting}
+              onChange={(event) => setTargetMinutes(Number(event.target.value))}
+              className="h-10 w-full rounded-lg border border-input bg-card px-3"
+            >
+              {[5, 10, 15, 20].map((value) => <option key={value} value={value}>{value} 分钟</option>)}
+            </select>
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block font-medium">主持风格</span>
+            <input
+              value={style}
+              maxLength={200}
+              disabled={submitting}
+              onChange={(event) => setStyle(event.target.value)}
+              className="h-10 w-full rounded-lg border border-input bg-card px-3"
+              placeholder="自然、清晰、连贯"
+            />
+          </label>
+        </div>
+
+        <p className="mt-4 text-sm font-medium">选择角色</p>
+
+        <div className="mt-2 max-h-80 overflow-y-auto rounded-lg border border-border">
           {rolesLoading ? (
             <div className="flex items-center justify-center py-10 text-xs text-muted-foreground">
               <Loader2 className="mr-2 size-4 animate-spin" />加载角色模板…
@@ -683,6 +712,10 @@ function formatStage(stage: string): string {
   const map: Record<string, string> = {
     queued: "排队中",
     calling_llm: "调用模型",
+    analyzing_source: "提取全文概要",
+    planning_script: "建立全局大纲",
+    drafting_sections: "分节生成脚本",
+    refining_script: "统一润色脚本",
     validating: "校验结果",
     synthesizing: "合成语音",
     merging: "合并音频",

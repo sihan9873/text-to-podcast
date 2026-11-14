@@ -13,6 +13,8 @@ import unicodedata
 
 MAX_SOURCE_CHARACTERS = 100_000
 MAX_CHUNK_CHARACTERS = 5_000
+DIRECT_LLM_MAX_CHARACTERS = 5_000
+LONG_DOCUMENT_CHUNK_CHARACTERS = 3_500
 MAX_SOURCE_CHUNKS = 2_000
 DEFAULT_CHARS_PER_MINUTE = 240
 DEFAULT_TARGET_MINUTES = 5
@@ -130,7 +132,7 @@ def split_oversized_block(block: str, source_type: str, limit: int) -> list[str]
     return result
 
 
-def segment_source(text: str, source_type: str = "text", mode: str = "paragraph",
+def segment_source(text: str, source_type: str = "text", mode: str = "auto",
                    target_minutes: int = DEFAULT_TARGET_MINUTES,
                    chars_per_minute: int = DEFAULT_CHARS_PER_MINUTE) -> dict:
     normalized = normalize_source(text)
@@ -140,7 +142,7 @@ def segment_source(text: str, source_type: str = "text", mode: str = "paragraph"
         raise ValueError(f"原文不能超过 {MAX_SOURCE_CHARACTERS} 个字符")
     if source_type not in {"text", "txt", "markdown"}:
         raise ValueError("原文类型无效")
-    if mode not in {"paragraph", "duration"}:
+    if mode not in {"auto", "paragraph", "duration"}:
         raise ValueError("分段方式无效")
     if not 1 <= target_minutes <= 15 or not 120 <= chars_per_minute <= 300:
         raise ValueError("预计时长或朗读速度超出允许范围")
@@ -148,15 +150,21 @@ def segment_source(text: str, source_type: str = "text", mode: str = "paragraph"
     blocks = natural_blocks(normalized, source_type)
     if not blocks:
         raise ValueError("原文没有可处理的自然段")
-    target = min(MAX_CHUNK_CHARACTERS, target_minutes * chars_per_minute)
-    pieces: list[str] = []
-    for block in blocks:
-        pieces.extend(split_oversized_block(
-            block, source_type, target if mode == "duration" else MAX_CHUNK_CHARACTERS
-        ))
+    if mode == "auto" and len(normalized) <= DIRECT_LLM_MAX_CHARACTERS:
+        pieces = [normalized]
+    else:
+        split_limit = (LONG_DOCUMENT_CHUNK_CHARACTERS if mode == "auto"
+                       else min(MAX_CHUNK_CHARACTERS, target_minutes * chars_per_minute)
+                       if mode == "duration" else MAX_CHUNK_CHARACTERS)
+        pieces: list[str] = []
+        for block in blocks:
+            pieces.extend(split_oversized_block(block, source_type, split_limit))
+
+    target = (LONG_DOCUMENT_CHUNK_CHARACTERS if mode == "auto"
+              else min(MAX_CHUNK_CHARACTERS, target_minutes * chars_per_minute))
 
     grouped: list[str] = []
-    if mode == "paragraph":
+    if mode == "paragraph" or (mode == "auto" and len(normalized) <= DIRECT_LLM_MAX_CHARACTERS):
         grouped = pieces
     else:
         current = ""
@@ -184,7 +192,9 @@ def segment_source(text: str, source_type: str = "text", mode: str = "paragraph"
             text=chunk,
             character_count=visible_character_count(chunk),
             estimated_seconds=max(1, math.ceil(spoken * 60 / chars_per_minute)),
-            boundary_type="paragraph" if mode == "paragraph" else "duration",
+            boundary_type=("complete" if mode == "auto" and len(grouped) == 1
+                           else "semantic" if mode == "auto"
+                           else "paragraph" if mode == "paragraph" else "duration"),
         ))
     return {
         "source_text": normalized,

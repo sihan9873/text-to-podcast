@@ -525,7 +525,9 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
                 </span>
                 {project.source_name && <span className="rounded-full bg-secondary px-2.5 py-1">{project.source_name}</span>}
                 <span className="rounded-full bg-secondary px-2.5 py-1">{(project.source_character_count ?? project.source_text?.length ?? 0).toLocaleString("zh-CN")} 字符</span>
-                <span className="rounded-full bg-secondary px-2.5 py-1">{project.source_chunk_count || 1} 个分段</span>
+                <span className="rounded-full bg-secondary px-2.5 py-1">
+                  {(project.source_chunk_count || 1) === 1 ? "完整原文" : `${project.source_chunk_count} 个语义片段`}
+                </span>
                 {project.source_estimated_seconds && <span className="rounded-full bg-secondary px-2.5 py-1">预计 {Math.ceil(project.source_estimated_seconds / 60)} 分钟</span>}
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
@@ -536,6 +538,7 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
             <SourceInputPanel
               projectId={projectId}
               onSubmitted={() => queryClient.invalidateQueries({ queryKey: ["project", projectId] })}
+              onGenerateRequested={() => setShowGenerate(true)}
             />
           )}
         </AppCardContent>

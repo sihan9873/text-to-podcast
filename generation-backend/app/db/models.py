@@ -47,12 +47,36 @@ class Project(Record, Base):
     title: Mapped[str] = mapped_column(String(100))
     source_text: Mapped[str | None] = mapped_column(Text)
     source_type: Mapped[str | None] = mapped_column(String(16))
+    source_name: Mapped[str | None] = mapped_column(String(255))
     source_hash: Mapped[str | None] = mapped_column(String(64))
+    source_character_count: Mapped[int | None] = mapped_column(Integer)
+    source_estimated_seconds: Mapped[int | None] = mapped_column(Integer)
+    source_chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+    segmentation_mode: Mapped[str | None] = mapped_column(String(16))
+    target_minutes: Mapped[int | None] = mapped_column(Integer)
+    chars_per_minute: Mapped[int | None] = mapped_column(Integer)
     source_submitted_at: Mapped[datetime | None] = mapped_column(DateTime)
     llm_model_id: Mapped[int] = mapped_column(ForeignKey("llm_models.id"))
     current_script_id: Mapped[int | None] = mapped_column(ForeignKey("scripts.id", use_alter=True, name="fk_project_current_script"))
     confirmed_script_id: Mapped[int | None] = mapped_column(ForeignKey("scripts.id", use_alter=True, name="fk_project_confirmed_script"))
     active_task_id: Mapped[int | None] = mapped_column(ForeignKey("tasks.id", use_alter=True, name="fk_project_active_task"))
+
+
+class SourceChunk(Record, Base):
+    __tablename__ = "source_chunks"
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text)
+    character_count: Mapped[int] = mapped_column(Integer)
+    estimated_seconds: Mapped[int] = mapped_column(Integer)
+    boundary_type: Mapped[str] = mapped_column(String(16))
+    __table_args__ = (
+        UniqueConstraint("project_id", "sequence"),
+        CheckConstraint("sequence > 0"),
+        CheckConstraint("character_count > 0"),
+        CheckConstraint("estimated_seconds > 0"),
+        {"sqlite_autoincrement": True},
+    )
 
 
 class Script(Record, Base):

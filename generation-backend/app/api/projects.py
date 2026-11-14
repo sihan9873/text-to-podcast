@@ -32,6 +32,16 @@ def detail(project_id: PathId, request: Request, session: SessionDep, user: User
     return envelope(request, project_view(session, owned_project(session, project_id, user)))
 
 
+@router.post("/{project_id}/source/preview", response_model=Envelope[dict], summary="预览长文档分段")
+def preview_source(project_id: PathId, body: SourceSubmit, request: Request, session: SessionDep, user: UserDep):
+    return envelope(request, projects.preview_source(session, user, project_id, body))
+
+
 @router.put("/{project_id}/source", response_model=Envelope[dict], summary="确认提交并锁定原文")
 def source(project_id: PathId, body: SourceSubmit, request: Request, session: SessionDep, user: UserDep):
-    return envelope(request, projects.submit_source(session, user, project_id, body.text))
+    return envelope(request, projects.submit_source(session, user, project_id, body))
+
+
+@router.get("/{project_id}/source/chunks", response_model=Envelope[dict], summary="查询已提交的文档分段")
+def chunks(project_id: PathId, request: Request, session: SessionDep, user: UserDep):
+    return envelope(request, projects.source_chunks(session, user, project_id))

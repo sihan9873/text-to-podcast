@@ -48,7 +48,9 @@ cd text-to-podcast-backend
 | POST | `/projects` | 通过 `title` 创建项目 |
 | GET | `/projects` | 分页查询项目，支持标题关键字 |
 | GET | `/projects/{project_id}` | 查询原文、当前/已确认脚本、最新音频及进行中任务 |
-| PUT | `/projects/{project_id}/source` | 通过 `text` 提交并锁定原文，最多 5000 字符 |
+| POST | `/projects/{project_id}/source/preview` | 预览长文本/Markdown 分段，不写数据库 |
+| PUT | `/projects/{project_id}/source` | 提交并锁定完整原文和有序分段，最多 100000 字符 |
+| GET | `/projects/{project_id}/source/chunks` | 查询已提交的有序文档分段 |
 | GET | `/roles` | 查询固定测试角色，取得 `profile_id` |
 | POST | `/projects/{project_id}/script/generate` | 提交脚本生成任务，返回 202 和 `task_id` |
 | GET | `/tasks/{task_id}` | 轮询任务状态、错误及结果 |
@@ -57,6 +59,8 @@ cd text-to-podcast-backend
 | POST | `/projects/{project_id}/audio/generate` | 为已确认脚本提交完整音频任务，返回 202 |
 | GET | `/audio-assets/{asset_id}/play` | 播放 MP3，支持 Range 请求 |
 | GET | `/audio-assets/{asset_id}/download` | 下载 MP3 |
+
+长文本和 Markdown 的格式、分段参数与接口示例见 [`../docs/long-document-input.md`](../docs/long-document-input.md)。项目表保存完整原文，`source_chunks` 保存按自然段或预计时长生成的有序分段；预览不落库，确认提交后两者同时锁定。
 
 脚本生成请求体：
 

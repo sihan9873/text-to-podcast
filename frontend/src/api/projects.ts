@@ -6,6 +6,7 @@ import type {
   PaginationParams,
   ProjectDetail,
   ProjectListItem,
+  SourcePreview,
   SourceResponse,
   SubmitSourceRequest,
 } from './types';
@@ -30,10 +31,7 @@ export const projectsApi = {
   submitSource: (projectId: string, body: SubmitSourceRequest) =>
     http.put<SourceResponse>(`/projects/${projectId}/source`, body),
 
-  /** P-05 上传 TXT 并提交原文 */
-  uploadSource: (projectId: string, file: File) => {
-    const fd = new FormData();
-    fd.append('file', file);
-    return http.upload<SourceResponse>(`/projects/${projectId}/source/upload`, fd);
-  },
+  /** P-05 预览长文本/Markdown 分段，不写入数据库 */
+  previewSource: (projectId: string, body: SubmitSourceRequest) =>
+    http.post<SourcePreview>(`/projects/${projectId}/source/preview`, body),
 };

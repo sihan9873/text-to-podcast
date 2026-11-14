@@ -1,8 +1,9 @@
 import { mockAuth, isMockAuthenticated, unauthenticated } from './auth.ts';
 import { HttpResponse } from 'msw';
 import { voices } from './voices.ts';
-import type { TaskDetail, TaskAccepted, CredentialItem, SaveScriptRequest, GenerateScriptRequest, SaveLlmConfigRequest, CreateRoleRequest } from '../api/types';
-import { projects, scripts, versions, sentences, candidates, tasks, roles, makeProject, makeScript, makeAudio, now, id, playUrl } from './store.ts';
+import type { TaskDetail, TaskAccepted, CredentialItem, SaveScriptRequest, GenerateScriptRequest, SaveLlmConfigRequest, CreateRoleRequest, SegmentationMode, SourceType } from '../api/types';
+import { projects, scripts, versions, sentences, candidates, tasks, roles, sourceChunks, makeProject, makeScript, makeAudio, now, id, playUrl } from './store.ts';
+import { segmentSourceLocally } from '../features/source-input/segmentation.ts';
 
 const ok = (data: unknown, status = 200) => HttpResponse.json({ code: 'OK', message: 'success', data, request_id: id('req'), timestamp: now() }, { status });
 const fail = (message: string, status = 400, code = status === 404 ? 'NOT_FOUND' : status === 409 ? 'CONFLICT' : status === 401 ? 'UNAUTHENTICATED' : 'VALIDATION_ERROR') => HttpResponse.json({ code, message, data: null, request_id: id('req'), timestamp: now() }, { status });
@@ -66,10 +67,25 @@ export async function dispatch(request: Request): Promise<Response> {
     if (!action) return ok({ ...project, active_tasks: tasks.filter(t => t.project_id === key && ['queued', 'running'].includes(t.status)).map(t => ({ ...accepted(t), stage: t.stage })) });
     if (action === 'llm-config') { if (method === 'PUT') Object.assign(project.llm_config, body as unknown as SaveLlmConfigRequest); return ok(project.llm_config); }
     if (action === 'source') {
+      if (child === 'chunks' && method === 'GET') {
+        if (!project.source_submitted) return fail('请先提交原文', 409, 'SOURCE_NOT_SUBMITTED');
+        return ok({ project_id: key, source_hash: project.source_hash, source_type: project.source_type, source_name: project.source_name, segmentation_mode: project.segmentation_mode, target_minutes: project.target_minutes, chars_per_minute: project.chars_per_minute, chunk_count: sourceChunks[key]?.length ?? 0, items: sourceChunks[key] ?? [] });
+      }
       if (project.source_submitted) return fail('原文已提交并锁定', 409);
-      let text = body.text; if (child === 'upload') { const form = await request.formData(); const file = form.get('file'); if (!(file instanceof File) || !file.name.toLowerCase().endsWith('.txt')) return fail('请上传 TXT 文件'); text = await file.text(); }
+      const text = body.text;
       if (typeof text !== 'string' || !text.trim()) return fail('原文不能为空');
-      Object.assign(project, { source_text: text.trim(), source_type: child === 'upload' ? 'txt' : 'text', source_submitted: true, source_submitted_at: now(), source_hash: id('hash'), updated_at: now() }); return ok(project);
+      const sourceType = (body.source_type ?? 'text') as SourceType;
+      const mode = (body.segmentation_mode ?? 'paragraph') as SegmentationMode;
+      const targetMinutes = Number(body.target_minutes ?? 5);
+      const charsPerMinute = Number(body.chars_per_minute ?? 240);
+      if (!['text', 'txt', 'markdown'].includes(sourceType) || !['paragraph', 'duration'].includes(mode)) return fail('分段参数无效', 422);
+      const plan = segmentSourceLocally(text, { sourceType, mode, targetMinutes, charsPerMinute });
+      if (!plan.sourceText || plan.characterCount > 100_000) return fail('原文不能为空且不能超过 100000 字符', 422);
+      const response = { project_id: key, source_text: plan.sourceText, source_type: sourceType, source_name: typeof body.source_name === 'string' ? body.source_name : null, source_asset_id: null, source_hash: child === 'preview' ? null : id('hash'), source_submitted: child !== 'preview', source_submitted_at: child === 'preview' ? null : now(), character_count: plan.characterCount, spoken_character_count: plan.spokenCharacterCount, estimated_seconds: plan.estimatedSeconds, segmentation_mode: mode, target_minutes: mode === 'duration' ? targetMinutes : null, chars_per_minute: charsPerMinute, chunk_count: plan.chunks.length, chunks: plan.chunks };
+      if (child === 'preview' && method === 'POST') return ok(response);
+      if (method !== 'PUT') return fail('请求方法无效', 405);
+      sourceChunks[key] = structuredClone(plan.chunks);
+      Object.assign(project, { source_text: plan.sourceText, source_type: sourceType, source_name: response.source_name, source_submitted: true, source_submitted_at: response.source_submitted_at, source_hash: response.source_hash, source_character_count: plan.characterCount, source_estimated_seconds: plan.estimatedSeconds, source_chunk_count: plan.chunks.length, segmentation_mode: mode, target_minutes: response.target_minutes, chars_per_minute: charsPerMinute, updated_at: now() }); return ok(response);
     }
     if (action === 'scripts') return ok(page(scripts.filter(s => s.project_id === key && (!url.searchParams.has('status') || s.status === url.searchParams.get('status'))).map(s => ({ ...s, sentence_count: s.sentences.length })), url));
     if (action === 'tasks') return ok(page(tasks.filter(t => t.project_id === key && ['status', 'task_type', 'audio_action', 'audio_version_id'].every(k => !url.searchParams.has(k) || Reflect.get(t, k) === url.searchParams.get(k))), url));

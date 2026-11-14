@@ -12,6 +12,7 @@ import urllib.request
 import wave
 
 ROOT = Path(__file__).resolve().parent
+OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 class DemoTests(unittest.TestCase):
     @classmethod
@@ -20,18 +21,34 @@ class DemoTests(unittest.TestCase):
             s.bind(('127.0.0.1', 0))
             cls.port = s.getsockname()[1]
         env = dict(os.environ, TTS_PROVIDER='mock')
-        cls.proc = subprocess.Popen([sys.executable, 'server.py', '--port', str(cls.port)],
-                                    cwd=ROOT, env=env, stdout=subprocess.DEVNULL)
+        cls.proc = subprocess.Popen(
+            [sys.executable, 'server.py', '--port', str(cls.port)],
+            cwd=ROOT,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
         cls.base = f'http://127.0.0.1:{cls.port}'
-        for _ in range(60):
+        last_error = None
+        for _ in range(200):
+            if cls.proc.poll() is not None:
+                output = cls.proc.stdout.read() if cls.proc.stdout else ''
+                raise RuntimeError(
+                    f'Server exited with code {cls.proc.returncode}: {output}'
+                )
             try:
-                urllib.request.urlopen(cls.base + '/api/config', timeout=1).close()
+                OPENER.open(cls.base + '/api/config', timeout=1).close()
                 break
-            except OSError:
+            except OSError as exc:
+                last_error = exc
                 time.sleep(.05)
         else:
             cls.proc.terminate()
-            raise RuntimeError('Server did not start')
+            output = cls.proc.stdout.read() if cls.proc.stdout else ''
+            raise RuntimeError(
+                f'Server did not start ({last_error!r}): {output}'
+            )
 
     @classmethod
     def tearDownClass(cls):
@@ -45,7 +62,7 @@ class DemoTests(unittest.TestCase):
         req = urllib.request.Request(self.base + path,
                     data=None if payload is None else json.dumps(payload).encode(), headers=headers)
         try:
-            r = urllib.request.urlopen(req, timeout=5)
+            r = OPENER.open(req, timeout=5)
         except urllib.error.HTTPError as e:
             r = e
         with r:

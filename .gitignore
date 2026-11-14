@@ -14,8 +14,6 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
-!frontend/.env.development
-!frontend/.env.production
 frontend/.env.local
 frontend/.env.*.local
 
@@ -25,10 +23,19 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+backend/data/*.db
+backend/data/*.db-*
+generation-backend/data/
 
 # Generated audio
 backend/**/*.wav
 backend/**/*.mp3
+generation-backend/**/*.wav
+generation-backend/**/*.mp3
+tts/outputs/*
+!tts/outputs/.gitkeep
+tts/models/**/*
+!tts/models/**/.gitkeep
 
 # Editors and operating systems
 .vscode/*

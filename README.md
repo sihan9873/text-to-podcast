@@ -1,33 +1,27 @@
 # 文字转播客生成系统
 
-本仓库是小组项目的统一代码库。系统目标是将中文原文转换为经过人工审核的播客脚本，再生成可播放、可下载的音频。
+本仓库将中文原文转换为可审核的播客脚本，再生成可播放和下载的音频。
 
-正式业务流程：
+当前统一开发基线为 `integration/final`。新功能应从该分支创建功能分支，并通过 Pull Request 合回 `integration/final`；完成真实端到端验收后再合入 `main`。
 
-```text
-导入/粘贴原文
-  -> 大模型生成播客脚本
-  -> 用户审核、编辑并确认脚本
-  -> 选择音色、风格和语速
-  -> 生成、播放和下载音频
-```
-
-## 目录结构
+## 统一目录
 
 ```text
 text-to-podcast/
-├─ frontend/           TextCast 前端项目
-├─ backend/
-│  └─ prototype/       Python 离线流程演示，不是正式后端
-├─ docs/               需求、分工、审核与联调文档
-├─ .github/            CI 和 Pull Request 模板
-├─ CONTRIBUTING.md     团队协作规范
-└─ README.md
+├─ frontend/             唯一 Web 前端（React + TypeScript）
+├─ backend/              账号、会话和管理员服务（FastAPI，端口 8000）
+├─ generation-backend/   项目、脚本、任务、音频和 Worker（端口 8001）
+├─ llm/                  本地大模型脚本服务（建议端口 8003）
+├─ tts/                  本地语音服务（端口 8002）
+├─ backend/prototype/    早期教学 Demo，不参与正式链路
+└─ docs/                 需求、接口、测试和模型资料
 ```
 
-## 运行前端
+架构决策与模块边界见 [`docs/unified-development-baseline.md`](docs/unified-development-baseline.md)。
 
-需要 Node.js 22.12+ 和 pnpm 11+。
+## 先运行前端 Mock
+
+需要 Node.js 22.12+、pnpm 11+。
 
 ```powershell
 cd frontend
@@ -35,42 +29,67 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-打开终端输出的本地地址。开发环境默认启用 MSW 模拟接口，因此暂时不需要运行后端。
+默认启用 MSW，暂时不依赖 Python 服务，适合开发页面和确认业务流程。
 
-提交前检查：
+提交前执行：
 
 ```powershell
 cd frontend
 pnpm check
 ```
 
-前端的页面、数据流和当前限制见 [`frontend/README.md`](frontend/README.md) 与 [`docs/frontend-review.md`](docs/frontend-review.md)。
+## 连接真实服务
 
-## 运行后端原型
+四个 Python 服务必须使用各自的虚拟环境，不要把依赖安装到同一个环境。
 
-需要 Python 3.10+，离线模式无第三方依赖。
+账号服务和生成服务的基础启动方式：
 
 ```powershell
-cd backend\prototype
-python test_demo.py
-python server.py
+# 窗口 1：账号服务
+cd backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-该原型有自己的简单演示页面，只用于说明任务提交、状态轮询和音频获取过程，不能直接充当正式前端的后端。
+```powershell
+# 窗口 2：生成 API
+cd generation-backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.lock
+.\.venv\Scripts\python.exe -m app.bootstrap
+$env:TEXTCAST_AUTH_URL='http://127.0.0.1:8000'
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+```
 
-## 项目资料
+```powershell
+# 窗口 3：生成 Worker
+cd generation-backend
+$env:TEXTCAST_AUTH_URL='http://127.0.0.1:8000'
+.\.venv\Scripts\python.exe -m app.worker
+```
 
-- [`docs/文字转播客生成系统_产品需求规格说明书.docx`](docs/文字转播客生成系统_产品需求规格说明书.docx)：需求基线。
-- [`docs/frontend-review.md`](docs/frontend-review.md)：TextCast 前端审核结论。
-- [`docs/integration-plan.md`](docs/integration-plan.md)：前后端接口和实施顺序。
-- [`docs/分工.md`](docs/分工.md)：当前小组分工记录。
+前端连接真实服务时创建 `frontend/.env.local`：
 
-## 当前状态
+```env
+VITE_ENABLE_MOCK=false
+```
 
-- TextCast 前端可以启动和构建，现阶段主要由 Mock 数据驱动。
-- “提交给 AI 修改”尚未调用真实大模型。
-- 脚本保存和确认仍有前端缓存操作，需要改为服务端持久化。
-- 试听、真实 TTS、数据库、受控下载和部署尚未完成。
-- `backend/prototype` 默认只生成一秒测试音，不朗读正文。
+LLM/TTS 的模型准备、独立环境和启动方式见 [`docs/local-llm.md`](docs/local-llm.md)、[`docs/local-qwen.md`](docs/local-qwen.md) 与 [`docs/model-setup.md`](docs/model-setup.md)。
 
-开发新功能前请先阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
+## 当前完成情况
+
+- 最新前端已成为唯一入口，旧版登录页、旧 API 客户端和旧工作流已移除。
+- 账号后端、生成后端、LLM 和 TTS 服务代码已位于同一开发分支。
+- 前端 lint、11 项测试、TypeScript 和生产构建通过。
+- CI 已覆盖前端、账号后端、生成后端、LLM 和 TTS 的无模型检查。
+- 默认模型流程仍允许 Mock；真实 Qwen 权重和音质不因代码合并而自动视为通过。
+
+## 下一阶段已知工作
+
+- 对齐新前端与账号服务的认证响应、字段命名和 CSRF 契约。
+- 在真实服务模式下跑通登录、项目、脚本、确认、音频生成、播放和下载。
+- 修复或固定 Python 测试依赖，确保所有 CI 任务稳定通过。
+- `feat/backend-tts-integration` 保留为历史参考；其 `llm/`、`tts/` 源码与本基线一致，不再整包合并以免覆盖账号后端。
+
+协作约定见 [`CONTRIBUTING.md`](CONTRIBUTING.md)，原始需求见 [`docs/文字转播客生成系统_产品需求规格说明书.docx`](docs/文字转播客生成系统_产品需求规格说明书.docx)。

@@ -1,32 +1,35 @@
-# React + TypeScript + Vite
+# TextCast 前端
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+本目录是统一项目的唯一前端入口。技术栈为 React、TypeScript、Vite、TanStack Query、React Router、Tailwind CSS 和 MSW。
 
-Currently, two official plugins are available:
+## 本地开发
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```powershell
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+默认使用 MSW 模拟接口。连接真实后端时，新建不提交到 Git 的 `.env.local`：
+
+```env
+VITE_ENABLE_MOCK=false
+```
+
+Vite 会把账号接口 `/api/auth`、管理员接口 `/api/admin` 转发到 `127.0.0.1:8000`，把生成业务接口转发到 `127.0.0.1:8001/api/v1`。
+
+## 质量检查
+
+```powershell
+pnpm check
+```
+
+该命令依次运行 Oxlint、Vitest、TypeScript 和 Vite 生产构建。
+
+## 代码边界
+
+- `src/api/`：统一 API 客户端和数据类型。
+- `src/app/`：登录、项目、脚本、角色和音频页面。
+- `src/mocks/`：与正式接口保持同一数据结构的开发模拟服务。
+- `src/features/source-input/`：TXT/UTF-8/大小和文本长度校验。
+
+旧的 `PodcastWorkflow`、旧 `request.ts` 和旧版登录页面已被统一入口替代，不应重新引入第二套客户端。

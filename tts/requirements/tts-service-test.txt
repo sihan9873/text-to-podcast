@@ -1,0 +1,3 @@
+-r tts-service.txt
+# Optional pytest runner; the service test command uses unittest.
+pytest>=8,<10

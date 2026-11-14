@@ -1,0 +1,11 @@
+name: podcast-melo
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+# Install CUDA 12.8 torch/torchaudio 2.9.1 separately, then upstream
+# third_party/MeloTTS/requirements.txt with requirements/melo-constraints.txt.
+
+variables:
+  PYTHONNOUSERSITE: "1"

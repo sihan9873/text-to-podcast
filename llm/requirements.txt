@@ -1,0 +1,5 @@
+# Install a hardware-compatible PyTorch build separately; do not manage torch here.
+transformers==4.57.3
+huggingface-hub==0.36.2
+fastapi>=0.115,<1
+uvicorn>=0.30,<1

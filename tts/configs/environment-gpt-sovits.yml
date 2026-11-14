@@ -1,0 +1,11 @@
+name: podcast-gpt-sovits
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+# Install CUDA 12.8 torch/torchaudio 2.9.1 separately, then upstream
+# third_party/GPT-SoVITS/requirements.txt with requirements/gpt-sovits-constraints.txt.
+
+variables:
+  PYTHONNOUSERSITE: "1"

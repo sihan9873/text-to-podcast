@@ -2,11 +2,11 @@
 
 ## 开始开发
 
-1. 从最新 `main` 创建分支。
+1. 拉取最新 `integration/final`，并从它创建功能分支；`main` 仅用于阶段性稳定版本。
 2. 前端开发进入 `frontend/`，执行 `pnpm install --frozen-lockfile`。
 3. 在小范围内完成一个可审查的变更。
-4. 前端提交前在 `frontend/` 运行 `pnpm check`；后端原型变更运行 `python backend/prototype/test_demo.py`。
-5. 推送分支并创建 Pull Request。
+4. 前端提交前在 `frontend/` 运行 `pnpm check`；正式后端变更在 `backend/` 运行 `python -m pytest`；后端原型变更运行 `python backend/prototype/test_demo.py`。
+5. 推送分支并创建 Pull Request，目标分支选择 `integration/final`。
 
 ## 分支命名
 
@@ -34,6 +34,7 @@ docs: 补充本地联调说明
 - 页面变化附截图；接口变化附请求与响应示例。
 - 不提交 `node_modules`、`dist`、真实密钥、个人配置或大体积临时文件。
 - 至少一名组员审核后再合并。
+- 日常功能 PR 合入 `integration/final`；只有经过完整联调和验收后，才由负责人创建 `integration/final` → `main` 的发布 PR。
 
 ## 完成标准
 

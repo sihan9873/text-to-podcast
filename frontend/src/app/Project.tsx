@@ -1,6 +1,6 @@
 // src/Project.tsx
 import * as React from "react"
-import { FileText, Upload, Loader2, AlertCircle } from "lucide-react"
+import { FileText, Loader2, AlertCircle } from "lucide-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { cn } from "@/lib/utils"
@@ -24,6 +24,7 @@ import {
 } from "@/api"
 
 import { AudioStatusBadge } from "./Audio"
+import { SourceInputPanel } from "@/features/source-input/SourceInputPanel"
 
 // ============================================================
 // Badges
@@ -397,13 +398,6 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
     scripts,
   )
 
-  const [pasteContent, setPasteContent] = React.useState("")
-  const [showPaste, setShowPaste] = React.useState(false)
-  const [submittingSource, setSubmittingSource] = React.useState(false)
-  const [draggingFile, setDraggingFile] = React.useState(false)
-  const [uploadError, setUploadError] = React.useState<string | null>(null)
-  const fileInputRef = React.useRef<HTMLInputElement>(null)
-  const sourceBusy = React.useRef(false)
   const [showGenerate, setShowGenerate] = React.useState(false)
 
   // 是否有进行中的脚本生成任务（来自 P-03 active_tasks）
@@ -427,54 +421,6 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
   )
 
   useScriptGenerationPolling(projectId, isGenerating, handleSettled)
-
-  // ---------- 提交原文 ----------
-  const submitText = async (text: string) => {
-    if (sourceBusy.current || project?.source_submitted) return
-    sourceBusy.current = true
-    setUploadError(null)
-    setSubmittingSource(true)
-    try {
-      await projectsApi.submitSource(projectId, { text })
-      await queryClient.invalidateQueries({ queryKey: ["project", projectId] })
-      setShowPaste(false)
-      setPasteContent("")
-    } catch (e) {
-      alert(e instanceof ApiError ? e.message : "提交失败")
-    } finally {
-      sourceBusy.current = false
-      setSubmittingSource(false)
-    }
-  }
-
-  const handleFileUpload = async (file: File) => {
-    if (sourceBusy.current || project?.source_submitted) return
-    setUploadError(null)
-    if (!file.name.toLowerCase().endsWith(".txt")) {
-      setUploadError("请上传 TXT 格式的文本文件。")
-      return
-    }
-    if (!file.size) {
-      setUploadError("文件内容为空，请选择有内容的 TXT 文件。")
-      return
-    }
-    sourceBusy.current = true
-    setSubmittingSource(true)
-    try {
-      await projectsApi.uploadSource(projectId, file)
-      await queryClient.invalidateQueries({ queryKey: ["project", projectId] })
-    } catch (e) {
-      setUploadError(e instanceof ApiError ? e.message : "上传失败，请重试。")
-    } finally {
-      sourceBusy.current = false
-      setSubmittingSource(false)
-    }
-  }
-
-  const handlePasteSubmit = () => {
-    if (!pasteContent.trim()) return
-    void submitText(pasteContent)
-  }
 
   // ---------- 生成成功后的回调：重新拉项目详情以恢复占位 ----------
   const handleGenerateSubmitted = React.useCallback(() => {
@@ -540,124 +486,28 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
           {hasSource ? (
             <>
               <div className="mt-3 max-h-48 overflow-y-auto rounded-lg bg-secondary/30 p-3">
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+                <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-muted-foreground">
                   {project.source_text}
-                </p>
+                </pre>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                <span className="rounded-full bg-secondary px-2.5 py-1">
+                  {project.source_type === "markdown" ? "Markdown" : project.source_type === "txt" ? "TXT" : "粘贴文本"}
+                </span>
+                {project.source_name && <span className="rounded-full bg-secondary px-2.5 py-1">{project.source_name}</span>}
+                <span className="rounded-full bg-secondary px-2.5 py-1">{(project.source_character_count ?? project.source_text?.length ?? 0).toLocaleString("zh-CN")} 字符</span>
+                <span className="rounded-full bg-secondary px-2.5 py-1">{project.source_chunk_count || 1} 个分段</span>
+                {project.source_estimated_seconds && <span className="rounded-full bg-secondary px-2.5 py-1">预计 {Math.ceil(project.source_estimated_seconds / 60)} 分钟</span>}
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
                 原文已锁定，不可修改；如需更换，请创建新项目。
               </p>
             </>
           ) : (
-            <>
-              <p className="mt-2 text-sm text-muted-foreground">
-                上传 TXT 文件或粘贴原文，提交后即锁定。
-              </p>
-
-              <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".txt"
-                    className="hidden"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0]
-                      event.target.value = ""
-                      if (file) void handleFileUpload(file)
-                    }}
-                    disabled={submittingSource}
-                  />
-              <button
-                type="button"
-                disabled={submittingSource}
-                aria-busy={submittingSource}
-                aria-describedby={uploadError ? "source-upload-error" : undefined}
-                onClick={() => fileInputRef.current?.click()}
-                onDragEnter={(event) => {
-                  event.preventDefault()
-                  if (!submittingSource) setDraggingFile(true)
-                }}
-                onDragOver={(event) => {
-                  event.preventDefault()
-                  event.dataTransfer.dropEffect = submittingSource ? "none" : "copy"
-                }}
-                onDragLeave={(event) => {
-                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingFile(false)
-                }}
-                onDrop={(event) => {
-                  event.preventDefault()
-                  setDraggingFile(false)
-                  if (submittingSource) return
-                  const files = event.dataTransfer.files
-                  if (files.length !== 1) {
-                    setUploadError("请一次上传一个 TXT 文件。")
-                    return
-                  }
-                  void handleFileUpload(files[0])
-                }}
-                className={cn(
-                  "mt-4 flex w-full flex-col items-center gap-2 rounded-xl border-2 border-dashed px-6 py-9 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60",
-                  draggingFile ? "border-primary bg-primary/10" : "border-border bg-secondary/20 hover:border-primary/50 hover:bg-primary/5",
-                )}
-              >
-                <span className="pointer-events-none flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  {submittingSource ? <Loader2 className="size-5 animate-spin" /> : <Upload className="size-5" />}
-                </span>
-                <span className="pointer-events-none text-sm font-medium">
-                  {submittingSource ? "正在上传并提交原文…" : draggingFile ? "松开以上传 TXT 文件" : "拖拽 TXT 文件到这里，或点击选择文件"}
-                </span>
-                <span className="pointer-events-none text-xs text-muted-foreground">仅支持单个 .txt 文件，上传成功后原文将锁定</span>
-              </button>
-              {uploadError && <p id="source-upload-error" role="alert" className="mt-2 text-sm text-destructive">{uploadError}</p>}
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <AppButton
-                  variant="outline"
-                  onClick={() => setShowPaste((v) => !v)}
-                  disabled={submittingSource}
-                >
-                  粘贴原文
-                </AppButton>
-              </div>
-
-              {showPaste && (
-                <div className="mt-4 space-y-3">
-                  <textarea
-                    value={pasteContent}
-                    onChange={(e) => setPasteContent(e.target.value)}
-                    placeholder="在此粘贴原文内容…（提交后锁定）"
-                    rows={6}
-                    disabled={submittingSource}
-                    className={cn(
-                      "w-full rounded-lg border border-input bg-card px-3 py-2 text-sm",
-                      "placeholder:text-muted-foreground",
-                      "focus-visible:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                    )}
-                  />
-                  <div className="flex justify-end gap-2">
-                    <AppButton
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setShowPaste(false)
-                        setPasteContent("")
-                      }}
-                      disabled={submittingSource}
-                    >
-                      取消
-                    </AppButton>
-                    <AppButton
-                      size="sm"
-                      onClick={handlePasteSubmit}
-                      disabled={!pasteContent.trim() || submittingSource}
-                    >
-                      {submittingSource && (
-                        <Loader2 className="mr-1 size-3 animate-spin" />
-                      )}
-                      提交原文
-                    </AppButton>
-                  </div>
-                </div>
-              )}
-            </>
+            <SourceInputPanel
+              projectId={projectId}
+              onSubmitted={() => queryClient.invalidateQueries({ queryKey: ["project", projectId] })}
+            />
           )}
         </AppCardContent>
       </AppCard>

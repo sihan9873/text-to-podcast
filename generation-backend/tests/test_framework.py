@@ -11,7 +11,7 @@ from app.bootstrap import initialize
 from app.core.common import BusinessError, utcnow
 from app.core.config import Settings
 from app.db.database import transaction
-from app.db.models import Asset, Project, Script, Task, User
+from app.db.models import Asset, Project, Script, SourceChunk, Task, User
 from app.db.seed import ROLE_ID
 from app.integrations import mock
 from app.integrations.contracts import GeneratedScript
@@ -104,6 +104,46 @@ def test_source_is_immutable_and_nonblank(env):
     r = env.client.put(f"/api/v1/projects/{pid}/source", json={"text": "替换"})
     assert r.status_code == 409 and r.json()["code"] == "SOURCE_LOCKED"
     assert env.client.get(f"/api/v1/projects/{pid}").json()["data"]["source_text"] == "原文\n下一行"
+
+
+def test_long_markdown_preview_and_commit_persists_ordered_chunks(env):
+    pid = create_project(env, text=False)
+    markdown = "# 长文档\n\n" + "甲" * 900 + "。\n\n## 第二节\n\n" + "乙" * 900 + "。\n\n" + "丙" * 900 + "。"
+    body = {"text": markdown, "source_type": "markdown", "source_name": "课程材料.md",
+            "segmentation_mode": "duration", "target_minutes": 5, "chars_per_minute": 240}
+    preview = env.client.post(f"/api/v1/projects/{pid}/source/preview", json=body)
+    assert preview.status_code == 200, preview.text
+    plan = preview.json()["data"]
+    assert plan["source_type"] == "markdown" and plan["chunk_count"] == 3
+    assert plan["source_name"] == "课程材料.md"
+    with env.db.sessions() as session:
+        assert session.scalar(select(func.count()).select_from(SourceChunk)) == 0
+
+    committed = env.client.put(f"/api/v1/projects/{pid}/source", json=body)
+    assert committed.status_code == 200, committed.text
+    assert committed.json()["data"]["chunks"] == plan["chunks"]
+    chunks = env.client.get(f"/api/v1/projects/{pid}/source/chunks").json()["data"]
+    assert [item["sequence"] for item in chunks["items"]] == [1, 2, 3]
+    assert chunks["source_name"] == "课程材料.md"
+    detail = env.client.get(f"/api/v1/projects/{pid}").json()["data"]
+    assert detail["source_character_count"] == len(markdown)
+    assert detail["source_chunk_count"] == 3
+    assert detail["segmentation_mode"] == "duration"
+
+
+def test_long_source_is_available_in_generation_snapshot(env):
+    pid = create_project(env, text=False)
+    text = "\n\n".join(["段落" + str(index) + "。" + "文" * 1100 for index in range(6)])
+    body = {"text": text, "source_type": "txt", "source_name": "long.txt",
+            "segmentation_mode": "duration", "target_minutes": 5, "chars_per_minute": 240}
+    assert env.client.put(f"/api/v1/projects/{pid}/source", json=body).status_code == 200
+    submitted = submit_script(env, pid)
+    assert submitted.status_code == 202
+    with env.db.sessions() as session:
+        task = session.get(Task, submitted.json()["data"]["task_id"])
+        assert len(task.input_snapshot["source_chunks"]) > 1
+        assert "".join(item["text"].replace("\n\n", "") for item in task.input_snapshot["source_chunks"])
+        assert task.input_snapshot["source_type"] == "txt"
 
 
 def test_idempotency_and_conflicting_generation(env):
@@ -231,8 +271,10 @@ def test_other_user_resources_are_hidden(env):
         storage_dir=env.settings.storage_dir, development_user_id=other))
     with TestClient(other_app) as client:
         pid = client.post("/api/v1/projects", json={"title": "private"}).json()["data"]["project_id"]
+        assert client.put(f"/api/v1/projects/{pid}/source", json={"text": "private source"}).status_code == 200
     assert env.client.get(f"/api/v1/projects/{pid}").status_code == 404
     assert env.client.put(f"/api/v1/projects/{pid}/source", json={"text": "try"}).status_code == 404
+    assert env.client.get(f"/api/v1/projects/{pid}/source/chunks").status_code == 404
     assert env.client.get("/api/v1/projects").json()["data"]["total"] == 0
 
 

@@ -1,5 +1,8 @@
-export const MAX_SOURCE_FILE_BYTES = 100 * 1024
-export const RECOMMENDED_SOURCE_CHARACTERS = 5_000
+import type { SourceType } from "@/api/types"
+
+export const MAX_SOURCE_FILE_BYTES = 2 * 1024 * 1024
+export const MAX_SOURCE_CHARACTERS = 100_000
+export const RECOMMENDED_SOURCE_CHARACTERS = 50_000
 
 export type SourceInputErrorCode =
   | "FILE_TYPE_INVALID"
@@ -8,6 +11,7 @@ export type SourceInputErrorCode =
   | "FILE_READ_FAILED"
   | "FILE_ENCODING_INVALID"
   | "SOURCE_EMPTY"
+  | "SOURCE_TOO_LONG"
 
 export interface SourceInputIssue {
   code: SourceInputErrorCode | "SOURCE_OVER_RECOMMENDED_LENGTH"
@@ -25,6 +29,12 @@ export interface SourceFileLike {
   size: number
   type?: string
   arrayBuffer: () => Promise<ArrayBuffer>
+}
+
+export interface ReadSourceDocument {
+  text: string
+  sourceType: Extract<SourceType, "txt" | "markdown">
+  sourceName: string
 }
 
 export class SourceInputError extends Error {
@@ -51,6 +61,13 @@ export function validateSourceText(text: string): SourceTextValidation {
     errors.push({ code: "SOURCE_EMPTY", message: "原文不能为空或只包含空白字符。" })
   }
 
+  if (characterCount > MAX_SOURCE_CHARACTERS) {
+    errors.push({
+      code: "SOURCE_TOO_LONG",
+      message: `原文不能超过 ${MAX_SOURCE_CHARACTERS.toLocaleString("zh-CN")} 个字符，当前为 ${characterCount.toLocaleString("zh-CN")} 个。`,
+    })
+  }
+
   if (characterCount > RECOMMENDED_SOURCE_CHARACTERS) {
     warnings.push({
       code: "SOURCE_OVER_RECOMMENDED_LENGTH",
@@ -64,26 +81,27 @@ export function validateSourceText(text: string): SourceTextValidation {
 export function validateSourceFileMetadata(
   file: Pick<SourceFileLike, "name" | "size" | "type">
 ): void {
-  if (!file.name.toLowerCase().endsWith(".txt")) {
-    throw new SourceInputError("FILE_TYPE_INVALID", "仅支持 .txt 文本文件。")
+  const extension = file.name.toLowerCase().split(".").pop()
+  if (extension !== "txt" && extension !== "md" && extension !== "markdown") {
+    throw new SourceInputError("FILE_TYPE_INVALID", "仅支持 .txt、.md 或 .markdown 文本文件。")
   }
 
-  const allowedMimeTypes = new Set(["text/plain", "application/octet-stream"])
+  const allowedMimeTypes = new Set(["text/plain", "text/markdown", "application/octet-stream"])
   if (file.type && !allowedMimeTypes.has(file.type)) {
     throw new SourceInputError(
       "FILE_TYPE_INVALID",
-      `文件类型 ${file.type} 不受支持，请选择纯文本 TXT 文件。`
+      `文件类型 ${file.type} 不受支持，请选择 TXT 或 Markdown 文件。`
     )
   }
 
   if (file.size === 0) {
-    throw new SourceInputError("FILE_EMPTY", "所选 TXT 文件为空。")
+    throw new SourceInputError("FILE_EMPTY", "所选文本文件为空。")
   }
 
   if (file.size > MAX_SOURCE_FILE_BYTES) {
     throw new SourceInputError(
       "FILE_TOO_LARGE",
-      `TXT 文件不能超过 100 KB，当前约 ${(file.size / 1024).toFixed(1)} KB。`
+      `文本文件不能超过 2 MB，当前约 ${(file.size / 1024 / 1024).toFixed(2)} MB。`
     )
   }
 }
@@ -120,6 +138,16 @@ export async function readSourceTextFile(file: SourceFileLike): Promise<string> 
   }
 
   return text
+}
+
+export async function readSourceDocumentFile(file: SourceFileLike): Promise<ReadSourceDocument> {
+  const text = await readSourceTextFile(file)
+  const lower = file.name.toLowerCase()
+  return {
+    text,
+    sourceType: lower.endsWith(".md") || lower.endsWith(".markdown") ? "markdown" : "txt",
+    sourceName: file.name,
+  }
 }
 
 export function getSourceInputErrorMessage(error: unknown): string {

@@ -30,6 +30,6 @@ pnpm check
 - `src/api/`：统一 API 客户端和数据类型。
 - `src/app/`：登录、项目、脚本、角色和音频页面。
 - `src/mocks/`：与正式接口保持同一数据结构的开发模拟服务。
-- `src/features/source-input/`：TXT/UTF-8/大小和文本长度校验。
+- `src/features/source-input/`：长文本、TXT/Markdown 读取、自然段/预计时长分段预览与输入校验。
 
 旧的 `PodcastWorkflow`、旧 `request.ts` 和旧版登录页面已被统一入口替代，不应重新引入第二套客户端。

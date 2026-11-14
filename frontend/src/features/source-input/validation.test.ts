@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest"
 
 import {
   MAX_SOURCE_FILE_BYTES,
+  MAX_SOURCE_CHARACTERS,
   RECOMMENDED_SOURCE_CHARACTERS,
   SourceInputError,
   countSourceCharacters,
   decodeUtf8Source,
+  readSourceDocumentFile,
   readSourceTextFile,
   validateSourceFileMetadata,
   validateSourceText,
@@ -46,7 +48,7 @@ describe("原文字符校验", () => {
     expect(validateSourceText(" \n\t ").errors[0]?.code).toBe("SOURCE_EMPTY")
   })
 
-  it("超过 5000 字时警告但不截断", () => {
+  it("超过建议长度时警告但不截断", () => {
     const source = "文".repeat(RECOMMENDED_SOURCE_CHARACTERS + 1)
     const result = validateSourceText(source)
 
@@ -55,40 +57,56 @@ describe("原文字符校验", () => {
     expect(result.characterCount).toBe(RECOMMENDED_SOURCE_CHARACTERS + 1)
     expect(source).toHaveLength(RECOMMENDED_SOURCE_CHARACTERS + 1)
   })
+
+  it("超过十万字符时拒绝", () => {
+    const result = validateSourceText("文".repeat(MAX_SOURCE_CHARACTERS + 1))
+    expect(result.errors[0]?.code).toBe("SOURCE_TOO_LONG")
+  })
 })
 
-describe("TXT 文件校验", () => {
-  it("接受大小上限内的 TXT 文件", () => {
+describe("TXT/Markdown 文件校验", () => {
+  it("接受大小上限内的 TXT 和 Markdown 文件", () => {
     expect(() =>
       validateSourceFileMetadata(
         makeFile({ name: "ARTICLE.TXT", size: MAX_SOURCE_FILE_BYTES })
       )
     ).not.toThrow()
+    expect(() =>
+      validateSourceFileMetadata(makeFile({ name: "notes.md", type: "text/markdown" }))
+    ).not.toThrow()
   })
 
-  it("拒绝非 TXT 文件", () => {
-    expect(() => validateSourceFileMetadata(makeFile({ name: "article.md" })))
+  it("拒绝非文本文件", () => {
+    expect(() => validateSourceFileMetadata(makeFile({ name: "article.pdf" })))
       .toThrowError(SourceInputError)
   })
 
   it("拒绝空文件", () => {
     expect(() => validateSourceFileMetadata(makeFile({ size: 0 }))).toThrow(
-      "所选 TXT 文件为空"
+      "所选文本文件为空"
     )
   })
 
-  it("拒绝超过 100 KB 的文件", () => {
+  it("拒绝超过 2 MB 的文件", () => {
     expect(() =>
       validateSourceFileMetadata(
         makeFile({ size: MAX_SOURCE_FILE_BYTES + 1 })
       )
-    ).toThrow("不能超过 100 KB")
+    ).toThrow("不能超过 2 MB")
   })
 
   it("拒绝无法读取的文件", async () => {
     await expect(
       readSourceTextFile(makeFile({ readError: new Error("disk error") }))
     ).rejects.toMatchObject({ code: "FILE_READ_FAILED" })
+  })
+
+  it("识别 Markdown 文件类型并保留文件名", async () => {
+    const result = await readSourceDocumentFile(
+      makeFile({ name: "课程.md", type: "text/markdown" })
+    )
+    expect(result.sourceType).toBe("markdown")
+    expect(result.sourceName).toBe("课程.md")
   })
 })
 

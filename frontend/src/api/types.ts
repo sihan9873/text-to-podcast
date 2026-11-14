@@ -144,11 +144,18 @@ export interface ProjectDetail {
   project_id: string;
   title: string;
   source_text: string | null;
-  source_type: 'text' | 'txt' | null;
+  source_type: SourceType | null;
+  source_name: string | null;
   source_asset_id: string | null;
   source_hash: string | null;
   source_submitted: boolean;
   source_submitted_at: string | null;
+  source_character_count: number | null;
+  source_estimated_seconds: number | null;
+  source_chunk_count: number;
+  segmentation_mode: SegmentationMode | null;
+  target_minutes: number | null;
+  chars_per_minute: number | null;
   llm_config: LlmConfig;
   current_script: ScriptSummary | null;
   confirmed_script: ConfirmedScriptSummary | null;
@@ -160,16 +167,60 @@ export interface ProjectDetail {
 
 export interface SubmitSourceRequest {
   text: string;
+  source_type?: SourceType;
+  source_name?: string | null;
+  segmentation_mode?: SegmentationMode;
+  target_minutes?: number;
+  chars_per_minute?: number;
+}
+
+export type SourceType = 'text' | 'txt' | 'markdown';
+export type SegmentationMode = 'paragraph' | 'duration';
+
+export interface SourceChunkPreview {
+  sequence: number;
+  text: string;
+  character_count: number;
+  estimated_seconds: number;
+  boundary_type: SegmentationMode;
+}
+
+export interface SourcePreview {
+  project_id: string;
+  source_text: string;
+  source_type: SourceType;
+  source_name: string | null;
+  source_asset_id: null;
+  source_hash: string | null;
+  source_submitted: boolean;
+  source_submitted_at: string | null;
+  character_count: number;
+  spoken_character_count: number;
+  estimated_seconds: number;
+  segmentation_mode: SegmentationMode;
+  target_minutes: number | null;
+  chars_per_minute: number;
+  chunk_count: number;
+  chunks: SourceChunkPreview[];
 }
 
 export interface SourceResponse {
   project_id: string;
   source_text: string;
-  source_type: 'text' | 'txt';
+  source_type: SourceType;
+  source_name: string | null;
   source_asset_id: string | null;
   source_hash: string;
   source_submitted: boolean;
   source_submitted_at: string;
+  character_count: number;
+  spoken_character_count: number;
+  estimated_seconds: number;
+  segmentation_mode: SegmentationMode;
+  target_minutes: number | null;
+  chars_per_minute: number;
+  chunk_count: number;
+  chunks: SourceChunkPreview[];
 }
 
 // ============ 脚本 ============

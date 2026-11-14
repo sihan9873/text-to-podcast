@@ -7,7 +7,7 @@ from sqlalchemy import func, select, update
 
 from app.core.common import BusinessError, new_token, utcnow
 from app.db.database import transaction
-from app.db.models import AudioVersion, LLMModel, Project, RoleProfile, Script, Task
+from app.db.models import AudioVersion, LLMModel, Project, RoleProfile, Script, SourceChunk, Task
 from app.integrations.local_llm import SYSTEM_PROMPT, script_config
 from app.integrations.local_tts import audio_config
 from app.services.views import accepted, owned_project, script_view
@@ -30,7 +30,23 @@ def submit(session, user_id, project_id, task_type, body, key, settings):
             raise BusinessError("QUEUE_FULL", "任务队列已满，请稍后提交", 429)
         if project.source_submitted_at is None:
             raise BusinessError("SOURCE_NOT_SUBMITTED", "请先确认提交原文")
-        snapshot = {"source_text": project.source_text, "source_hash": project.source_hash, "simulated": True}
+        source_chunks = session.scalars(
+            select(SourceChunk).where(SourceChunk.project_id == project.id).order_by(SourceChunk.sequence)
+        ).all()
+        snapshot = {
+            "source_text": project.source_text,
+            "source_hash": project.source_hash,
+            "source_type": project.source_type,
+            "segmentation_mode": project.segmentation_mode,
+            "source_chunks": [{
+                "chunk_id": chunk.id,
+                "sequence": chunk.sequence,
+                "text": chunk.text,
+                "character_count": chunk.character_count,
+                "estimated_seconds": chunk.estimated_seconds,
+            } for chunk in source_chunks],
+            "simulated": True,
+        }
         script = None
         audio = None
         if task_type == "script":

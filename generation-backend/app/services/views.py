@@ -65,8 +65,15 @@ def project_view(session, project):
     if confirmation:
         confirmation["confirmed_at"] = iso(confirmed.confirmed_at)
     return {"project_id": project.id, "title": project.title, "source_text": project.source_text,
-        "source_type": project.source_type, "source_asset_id": None, "source_hash": project.source_hash,
+        "source_type": project.source_type, "source_name": project.source_name,
+        "source_asset_id": None, "source_hash": project.source_hash,
         "source_submitted": project.source_submitted_at is not None, "source_submitted_at": iso(project.source_submitted_at),
+        "source_character_count": project.source_character_count,
+        "source_estimated_seconds": project.source_estimated_seconds,
+        "source_chunk_count": project.source_chunk_count,
+        "segmentation_mode": project.segmentation_mode,
+        "target_minutes": project.target_minutes,
+        "chars_per_minute": project.chars_per_minute,
         "llm_config": {"project_id": project.id, "model_id": project.llm_model_id, "credential_source": "platform",
                        "credential_id": None, "params": {}, "available": True, "unavailable_reason": None},
         "current_script": brief(current), "confirmed_script": confirmation,

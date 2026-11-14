@@ -1,4 +1,4 @@
-import type { ProjectDetail, ScriptDetail, AudioVersionDetail, AudioSentenceItem, CandidateItem, TaskDetail, RoleProfileItem } from '../api/types';
+import type { ProjectDetail, ScriptDetail, AudioVersionDetail, AudioSentenceItem, CandidateItem, TaskDetail, RoleProfileItem, SourceChunkPreview } from '../api/types';
 
 export const now = () => new Date().toISOString();
 export const id = (prefix: string) => `${prefix}_${crypto.randomUUID()}`;
@@ -10,9 +10,10 @@ export const versions: AudioVersionDetail[] = [];
 export const sentences: Record<string, AudioSentenceItem[]> = {};
 export const candidates: Record<string, CandidateItem[]> = {};
 export const tasks: TaskDetail[] = [];
+export const sourceChunks: Record<string, SourceChunkPreview[]> = {};
 export function makeProject(title: string): ProjectDetail {
   const project_id = id('project');
-  const project: ProjectDetail = { project_id, title, source_text: null, source_type: null, source_asset_id: null, source_hash: null, source_submitted: false, source_submitted_at: null, llm_config: { project_id, model_id: 'model_demo', credential_source: 'platform', credential_id: null, params: { temperature: 0.7 }, available: true, unavailable_reason: null }, current_script: null, confirmed_script: null, latest_audio: null, active_tasks: [], created_at: now(), updated_at: now() };
+  const project: ProjectDetail = { project_id, title, source_text: null, source_type: null, source_name: null, source_asset_id: null, source_hash: null, source_submitted: false, source_submitted_at: null, source_character_count: null, source_estimated_seconds: null, source_chunk_count: 0, segmentation_mode: null, target_minutes: null, chars_per_minute: null, llm_config: { project_id, model_id: 'model_demo', credential_source: 'platform', credential_id: null, params: { temperature: 0.7 }, available: true, unavailable_reason: null }, current_script: null, confirmed_script: null, latest_audio: null, active_tasks: [], created_at: now(), updated_at: now() };
   projects.unshift(project); return project;
 }
 export function makeScript(project: ProjectDetail, selected = roles.slice(0, 2).map((r, i) => ({ profile_id: r.profile_id, role_key: i ? 'guest' : 'host' }))): ScriptDetail {
@@ -37,7 +38,9 @@ const demos = [
 demos.forEach(([title, source], index) => {
   const project = makeProject(title); project.project_id = `project_demo_${index + 1}`; project.llm_config.project_id = project.project_id;
   if (!source) return;
-  Object.assign(project, { source_text: source, source_type: 'text', source_hash: `demo_${index}`, source_submitted: true, source_submitted_at: now() });
+  const chunks = source.split(/\n\s*\n/).filter(Boolean).map((text, chunkIndex) => ({ sequence: chunkIndex + 1, text, character_count: text.length, estimated_seconds: Math.max(1, Math.ceil(text.replace(/\s/g, '').length / 4)), boundary_type: 'paragraph' as const }));
+  sourceChunks[project.project_id] = chunks;
+  Object.assign(project, { source_text: source, source_type: 'text', source_name: null, source_hash: `demo_${index}`, source_submitted: true, source_submitted_at: now(), source_character_count: source.length, source_estimated_seconds: chunks.reduce((sum, item) => sum + item.estimated_seconds, 0), source_chunk_count: chunks.length, segmentation_mode: 'paragraph', target_minutes: null, chars_per_minute: 240 });
   const script = makeScript(project);
   if (index < 2) { Object.assign(script, { status: 'confirmed', editable: false, confirmed_at: now(), confirmed_by: 'user_demo', confirmed_revision: 1 }); project.confirmed_script = { ...script, confirmed_at: script.confirmed_at! }; const version = makeAudio(script, index === 1 ? 'failed' : 'ready'); if (index === 1) tasks.push({ task_id: id('task'), project_id: project.project_id, task_type: 'audio', audio_action: 'full', script_id: script.script_id, audio_version_id: version.audio_version_id, audio_sentence_id: null, retry_of_task_id: null, status: 'failed', stage: 'synthesis', progress: 50, total_sentences: script.sentences.length, completed_sentences: 0, failed_sentences: script.sentences.length, result: null, error_code: 'TTS_UNAVAILABLE', error_message: '模拟语音服务超时，可点击重试', can_retry: true, result_asset_id: null, created_at: now(), updated_at: now(), started_at: now(), finished_at: now() }); }
 });

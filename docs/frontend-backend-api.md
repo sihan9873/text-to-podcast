@@ -4,8 +4,8 @@
 
 ## 服务入口
 
-- 账号和用户管理请求走 /api，由 Vite 代理到 8000。账号会话使用 Cookie。
-- 生成页面请求走 /generation，由 Vite 代理到 8001 并改写为 /api/v1。下表以生成服务路径为准，省略 /api/v1。
+- 账号和用户管理请求走 `/api/auth`、`/api/admin`，由 Vite 代理到 8000。账号会话使用 Cookie。
+- 生成页面请求走 `/api`，由 Vite 代理到 8001 并改写为 `/api/v1`；显式 `/api/v1` 请求也直接代理到 8001。下表省略服务端 `/api/v1` 前缀。
 - 生成 API 通过 TEXTCAST_AUTH_URL 校验登录会话，沿用账号身份。生成业务 ID 为整数，账号服务 ID 为字符串。业务 JSON 从响应的 data 字段取值，播放和下载直接返回 MP3。
 
 ## 当前页面调用
@@ -15,7 +15,9 @@
 | GET /projects | 列表与最近项目，读取 items、total、project_id、title、updated_at 及当前产物 ID |
 | POST /projects | 新建项目，发送 title，按返回的 project_id 打开详情 |
 | GET /projects/{id} | 读取原文、当前脚本、最新音频和活动任务，刷新时恢复 |
-| PUT /projects/{id}/source | 发送 text，最多 5000 字符，成功后锁定 |
+| POST /projects/{id}/source/preview | 预览最长 100000 字符的纯文本/Markdown 分段，不落库 |
+| PUT /projects/{id}/source | 提交完整原文、格式和分段参数，成功后锁定原文与分段 |
+| GET /projects/{id}/source/chunks | 查询有序分段，供脚本生成任务消费 |
 | GET /roles | 取当前用户的默认主持人 profile_id |
 | POST /projects/{id}/script/generate | 发送 roles，其中包含数字 profile_id 和 role_key，返回 task_id |
 | GET /tasks/{id} | 轮询 queued、running、succeeded 或 failed，失败时读取 error_message |
@@ -30,9 +32,9 @@
 ## 差异和后续范围
 
 - 当前最小模拟流程所需的业务路由均已接线。此前以 HTTP 验证了登录、生成、下载及跨账号隔离，前端构建已通过。浏览器逐步点击仍待验收。
-- 旧项目、脚本和音频组件中还有面向旧契约的调用。当前项目路由使用 PodcastWorkflow。这些组件若重新挂载，需要重新核对接口和数据结构。
-- 若恢复原有编辑能力，需补项目改名、服务端 TXT 上传、脚本编辑、取消确认、脚本和音频历史、前三句试听、逐句进度及片段候选。项目详情当前只展示当前脚本和最新完整音频。
+- 当前项目页面使用统一 API 客户端；变更契约时必须同步类型、Mock、正式后端和本文件。
+- TXT/Markdown 文件由浏览器按 UTF-8 读取，再调用同一预览/提交 JSON 接口；后端保存完整原文和有序分段。长文档真实 LLM 逐段生成仍需接入。
 - 后端支持传入角色列表和重新提交生成任务。页面仅使用默认主持人，生成脚本成功后也没有重新生成入口。
 - 可用但业务页面未调用的独立路由包括存活和就绪检查。就绪检查覆盖数据库初始化，Worker 在线状态需要单独确认。
 - 模型、密钥、项目模型配置、角色配置管理、TTS 配置和音色查询属于预留路由。GET /roles 角色列表已可用，其余配置路由返回 501。
-- /generation 的转发目前由 Vite 开发服务提供。部署静态页面时需要在部署环境配置相同的转发规则。
+- `/api` 的转发目前由 Vite 开发服务提供。部署静态页面时需要在部署环境配置相同的账号/生成服务转发规则。

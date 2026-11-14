@@ -32,7 +32,12 @@ class ProjectCreate(Input):
 
 
 class SourceSubmit(Input):
-    text: str = Field(min_length=1, max_length=5000)
+    text: str = Field(min_length=1, max_length=100_000)
+    source_type: Literal["text", "txt", "markdown"] = "text"
+    source_name: str | None = Field(default=None, max_length=255)
+    segmentation_mode: Literal["paragraph", "duration"] = "paragraph"
+    target_minutes: int = Field(default=5, ge=1, le=15)
+    chars_per_minute: int = Field(default=240, ge=120, le=300)
 
     @field_validator("text")
     @classmethod
@@ -40,6 +45,18 @@ class SourceSubmit(Input):
         if not value.strip():
             raise ValueError("原文不能全为空白")
         return value.replace("\r\n", "\n").replace("\r", "\n")
+
+    @field_validator("source_name")
+    @classmethod
+    def normalize_source_name(cls, value):
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            return None
+        if any(char in value for char in ("/", "\\", "\0")):
+            raise ValueError("文件名不能包含路径")
+        return value
 
 
 class RoleChoice(Input):

@@ -83,12 +83,16 @@ def submit(session, user_id, project_id, task_type, body, key, settings):
             if script.status != "confirmed" or project.confirmed_script_id != script.id or script.confirmed_revision != script.edit_revision:
                 raise BusinessError("SCRIPT_NOT_CONFIRMED", "请先确认该脚本")
             snapshot["script"] = script_view(session, script)
+            from app.services.voices import prepare_clones
+            snapshot["clone_references"] = prepare_clones(session, user_id, snapshot["script"], settings)
             snapshot["audio_config"] = audio_config(settings)
             snapshot["simulated"] = snapshot["audio_config"]["simulated"]
             version = (session.scalar(select(func.max(AudioVersion.version)).where(AudioVersion.project_id == project.id)) or 0) + 1
             audio = AudioVersion(project_id=project.id, script_id=script.id, version=version,
                 script_edit_revision=script.edit_revision, script_snapshot=deepcopy(snapshot["script"]),
                 config_snapshot={"roles": deepcopy(snapshot["script"]["roles"]),
+                                 "voice_versions": {voice: {k: v for k, v in ref.items() if k in ("voice_version_id", "reference_sha256", "model_revision")}
+                                                    for voice, ref in snapshot["clone_references"].items()},
                                  **deepcopy(snapshot["audio_config"])})
             session.add(audio)
             session.flush()

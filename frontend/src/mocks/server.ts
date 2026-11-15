@@ -43,6 +43,9 @@ export async function dispatch(request: Request): Promise<Response> {
   const body = text ? JSON.parse(text) as Record<string, unknown> : {};
   if (resource === 'auth') return mockAuth(key, method, body);
   if (!isMockAuthenticated()) return unauthenticated();
+  if (resource === 'capabilities') return ok({ audio_preview: true, sentence_audio: true, voice_cloning: false });
+  if (resource === 'voice-profiles' && method === 'GET') return ok({ items: [] });
+  if (resource === 'voice-profiles' || resource === 'voice-references') return fail('演示模式不保存录音或合成克隆语音', 422, 'MOCK_ONLY');
   const idem = request.headers.get('Idempotency-Key'); const dedupKey = `${method}:${url.pathname}:${idem}`;
   if (idem && dedup.has(dedupKey)) return ok(dedup.get(dedupKey), 202);
   const accept = (data: TaskAccepted) => { if (idem) dedup.set(dedupKey, data); return ok(data, 202); };
@@ -141,7 +144,7 @@ export async function dispatch(request: Request): Promise<Response> {
   }
   if (resource === 'tasks') {
     const task = tasks.find(t => t.task_id === key); if (!task) return fail('任务不存在', 404);
-    if (action === 'retry') { if (!task.can_retry || !task.audio_version_id) return fail('任务不可重试', 409); return accept(queue(task.project_id, { audio_action: task.audio_action, audio_version_id: task.audio_version_id, script_id: task.script_id, retry_of_task_id: key, total_sentences: task.total_sentences }, retry => { completeAudio(task.audio_version_id!); retry.result = { audio_version_id: task.audio_version_id }; })); }
+    if (action === 'retry') { if (!task.can_retry || !task.audio_version_id || !task.project_id) return fail('任务不可重试', 409); return accept(queue(task.project_id, { audio_action: task.audio_action, audio_version_id: task.audio_version_id, script_id: task.script_id, retry_of_task_id: key, total_sentences: task.total_sentences }, retry => { completeAudio(task.audio_version_id!); retry.result = { audio_version_id: task.audio_version_id }; })); }
     return ok(task);
   }
   if (resource === 'audio-versions') {

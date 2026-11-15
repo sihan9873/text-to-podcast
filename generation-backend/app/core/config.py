@@ -19,7 +19,7 @@ class Settings:
     max_pending_tasks: int = 100
     cors_origin: str = "http://localhost:5173"
     audio_provider: str = "mock"
-    tts_base_url: str = "http://127.0.0.1:8001"
+    tts_base_url: str = "http://127.0.0.1:8002"
     tts_engine_id: str = "qwen3-customvoice"
     tts_timeout_seconds: float = 300.0
     tts_chunk_chars: int = 120
@@ -28,7 +28,8 @@ class Settings:
     ffmpeg_binary: str = "ffmpeg"
     audio_encode_timeout_seconds: float = 60.0
     llm_provider: str = "mock"
-    llm_base_url: str = "http://127.0.0.1:8002"
+    llm_base_url: str = "http://127.0.0.1:8003"
+    voice_reference_dir: Path = ROOT / "data" / "voice-references"
     llm_model_id: str = "Qwen/Qwen2.5-0.5B-Instruct"
     llm_timeout_seconds: float = 300.0
     llm_max_new_tokens: int = 1536
@@ -45,7 +46,7 @@ class Settings:
             max_pending_tasks=int(os.getenv("MAX_PENDING_TASKS", "100")),
             cors_origin=os.getenv("CORS_ORIGIN", "http://localhost:5173"),
             audio_provider=os.getenv("AUDIO_PROVIDER", "mock"),
-            tts_base_url=os.getenv("LOCAL_TTS_BASE_URL", "http://127.0.0.1:8001"),
+            tts_base_url=os.getenv("LOCAL_TTS_BASE_URL", "http://127.0.0.1:8002"),
             tts_engine_id=os.getenv("LOCAL_TTS_ENGINE_ID", "qwen3-customvoice"),
             tts_timeout_seconds=float(os.getenv("LOCAL_TTS_TIMEOUT_SECONDS", "300")),
             tts_chunk_chars=int(os.getenv("LOCAL_TTS_CHUNK_CHARS", "120")),
@@ -54,7 +55,8 @@ class Settings:
             ffmpeg_binary=os.getenv("FFMPEG_BINARY", "ffmpeg"),
             audio_encode_timeout_seconds=float(os.getenv("AUDIO_ENCODE_TIMEOUT_SECONDS", "60")),
             llm_provider=os.getenv("LLM_PROVIDER", "mock"),
-            llm_base_url=os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8002"),
+            llm_base_url=os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8003"),
+            voice_reference_dir=Path(os.getenv("VOICE_REFERENCE_DIR", str(cls.voice_reference_dir))).resolve(),
             llm_model_id=os.getenv("LOCAL_LLM_MODEL_ID", "Qwen/Qwen2.5-0.5B-Instruct"),
             llm_timeout_seconds=float(os.getenv("LOCAL_LLM_TIMEOUT_SECONDS", "300")),
             llm_max_new_tokens=int(os.getenv("LOCAL_LLM_MAX_NEW_TOKENS", "1536")),

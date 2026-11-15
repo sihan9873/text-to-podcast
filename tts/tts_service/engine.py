@@ -26,6 +26,7 @@ class EngineInfo:
     supports_cloning: bool = False
     availability_reason: str | None = None
     max_text_length: int = 1000
+    model_revision: str | None = None
 
 
 @dataclass(frozen=True)

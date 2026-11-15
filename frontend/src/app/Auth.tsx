@@ -18,15 +18,15 @@ type Mode = "login" | "register"
 // 字段校验（与文档一致）
 // ============================================================
 
-const USERNAME_RE = /^[A-Za-z0-9_]{3,64}$/
+const USERNAME_RE = /^[A-Za-z0-9_]{3,32}$/
 const PASSWORD_MIN = 8
 const PASSWORD_MAX = 128
-const DISPLAY_NAME_MAX = 100
+const DISPLAY_NAME_MAX = 80
 
 function validateUsername(v: string): string | null {
   if (!v) return "请输入用户名"
   if (!USERNAME_RE.test(v))
-    return "用户名为 3–64 位字母、数字或下划线"
+    return "用户名为 3–32 位字母、数字或下划线"
   return null
 }
 
@@ -139,6 +139,8 @@ export default function AuthPage() {
           password,
           display_name: displayName.trim() || undefined,
         })
+        // The account service creates a session on registration; clear it before login.
+        await authApi.logout()
         // 注册不自动登录，切到登录模式
         switchMode("login")
         setPassword('')
@@ -226,7 +228,7 @@ export default function AuthPage() {
                 label="用户名"
                 hint={
                   mode === "register"
-                    ? "3–64 位字母、数字或下划线"
+                    ? "3–32 位字母、数字或下划线"
                     : undefined
                 }
                 error={showFieldError("username")}

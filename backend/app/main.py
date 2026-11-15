@@ -65,6 +65,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.middleware("http")
     async def request_context(request: Request, call_next):
         request.state.request_id = str(uuid4())
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            origin = request.headers.get("origin")
+            if ((not origin and request.headers.get("sec-fetch-site") == "cross-site") or origin and
+                origin not in app_settings.cors_origins and origin != f"{request.url.scheme}://{request.headers.get('host')}"):
+                return JSONResponse(status_code=403, content={"code": "CSRF_FAILED", "message": "请求来源校验失败"})
         response = await call_next(request)
         response.headers["X-Request-ID"] = request.state.request_id
         return response

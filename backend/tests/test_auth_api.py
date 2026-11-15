@@ -44,6 +44,18 @@ async def login(client: AsyncClient, username: str, password: str) -> None:
     assert response.status_code == 200, response.text
 
 
+@pytest.mark.anyio
+async def test_cookie_writes_require_trusted_browser_origin(client: AsyncClient) -> None:
+    await login(client, "admin", ADMIN_PASSWORD)
+    rejected = await client.post("/api/auth/logout", headers={"Origin": "https://evil.example"})
+    assert rejected.status_code == 403 and rejected.json()["code"] == "CSRF_FAILED"
+    assert (await client.get("/api/auth/me")).status_code == 200
+    rejected = await client.post("/api/auth/logout", headers={"Sec-Fetch-Site": "cross-site"})
+    assert rejected.status_code == 403
+    allowed = await client.post("/api/auth/logout", headers={"Origin": "http://localhost:5173"})
+    assert allowed.status_code == 204
+
+
 async def create_normal_user(
     client: AsyncClient, username: str = "alice"
 ) -> dict:

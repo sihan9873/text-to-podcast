@@ -38,36 +38,20 @@ import ProjectPage from "@/app/Project"
 import ScriptPage from "@/app/Script"
 import AudioPage from "@/app/Audio"
 import AuthPage from "@/app/Auth"
+import DevTools from "@/app/DevTools"
+import { useSessionQuery as useSession } from "@/components/auth/session"
 
 import {
-  ApiError,
   authApi,
   projectsApi,
   tasksApi,
   type ProjectListItem,
-  type SessionResponse,
   type TaskStatus,
 } from "@/api"
 
 // ============================================================
 // Session：全应用唯一会话数据源
 // ============================================================
-
-function useSession() {
-  return useQuery<SessionResponse | null>({
-    queryKey: ["session"],
-    queryFn: async () => {
-      try {
-        return await authApi.me()
-      } catch (e) {
-        if (e instanceof ApiError && e.code === "UNAUTHENTICATED") return null
-        throw e
-      }
-    },
-    staleTime: 5 * 60 * 1000,
-    retry: false,
-  })
-}
 
 // ============================================================
 // 创建项目（带 pending 防重复）
@@ -214,7 +198,7 @@ function AppLayout() {
       if (!result.isSuccess) continue
       for (const task of result.data.items) {
         const previous = previousTaskStatuses.current.get(task.task_id)
-        if ((previous === "queued" || previous === "running") && task.status === "succeeded") {
+        if (task.project_id && (previous === "queued" || previous === "running") && task.status === "succeeded") {
           completedProjects.add(task.project_id)
         }
         previousTaskStatuses.current.set(task.task_id, task.status)
@@ -228,7 +212,10 @@ function AppLayout() {
   const sidebarSections = [
       {
         title: '配置',
-        items: [{ label: '角色模板', href: '/roles', icon: Mic2 }],
+        items: [
+          { label: '角色模板', href: '/roles', icon: Mic2 },
+          ...(import.meta.env.DEV ? [{ label: '本地测试控制台', href: '/dev-tools', icon: FileCheck2 }] : []),
+        ],
       },
       {
         title: "项目",
@@ -769,6 +756,7 @@ function NotFound({ onNavigate }: { onNavigate: (href: string) => void }) {
 export default function App() {
   return (
     <Routes>
+      {import.meta.env.DEV && <Route path="dev-tools" element={<DevTools />} />}
       {/* 游客路由 */}
       <Route
         path="login"

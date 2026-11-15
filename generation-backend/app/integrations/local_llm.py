@@ -110,13 +110,19 @@ class LocalLLMClient:
                     raise ValueError("invalid script")
                 return result
         except HTTPError as exc:
+            message = None
             try:
-                code = json.loads(exc.read(4096))["error"]["code"]
+                error = json.loads(exc.read(4096))["error"]
+                if not isinstance(error, dict):
+                    raise ValueError("invalid error response")
+                code = error["code"]
+                if isinstance(error.get("message"), str):
+                    message = error["message"].strip()[:500]
                 if not isinstance(code, str) or not re.fullmatch(r"[a-z_]{1,64}", code):
                     code = "http_error"
             except (ValueError, KeyError, TypeError):
                 code = "http_error"
-            raise BusinessError("LLM_" + code.upper(), f"LLM 服务返回 HTTP {exc.code}，请检查模型和输入") from exc
+            raise BusinessError("LLM_" + code.upper(), message or f"LLM 服务返回 HTTP {exc.code}，请检查模型和输入") from exc
         except TimeoutError as exc:
             raise BusinessError("LLM_TIMEOUT", "LLM 调用超时；上游推理可能仍在进行") from exc
         except URLError as exc:

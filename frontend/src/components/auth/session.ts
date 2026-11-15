@@ -5,9 +5,20 @@ export function safeRedirect(value: string | null) {
   const pathname = value.split(/[?#]/)[0].replace(/\/+$/, '');
   return ['/login', '/register', '/signup'].includes(pathname) ? '/projects' : value;
 }
+export async function loadSession(): Promise<SessionResponse | null> {
+  try {
+    return await authApi.me();
+  } catch (error) {
+    // Both real AUTH_REQUIRED and mock UNAUTHENTICATED mean signed out.
+    if (error instanceof ApiError && error.status === 401) {
+      setCsrfToken(null);
+      return null;
+    }
+    throw error;
+  }
+}
+
 export function useSessionQuery() {
-  return useQuery<SessionResponse | null>({ queryKey: ['session'], queryFn: async () => {
-    try { return await authApi.me(); }
-    catch (error) { if (error instanceof ApiError && error.code === 'UNAUTHENTICATED') { setCsrfToken(null); return null; } throw error; }
-  }, staleTime: 5 * 60 * 1000, retry: false });
+  return useQuery<SessionResponse | null>({ queryKey: ['session'], queryFn: loadSession,
+    staleTime: 5 * 60 * 1000, retry: false });
 }

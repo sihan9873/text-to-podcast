@@ -1,6 +1,7 @@
 """FastAPI API进程；后台任务单独运行 python -m app.worker。"""
 from contextlib import asynccontextmanager
 import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -10,7 +11,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import configuration, generation, projects, resources
+from app.api import configuration, generation, projects, resources, voices, role_management, workflow
 from app.core.common import BusinessError, iso, new_token, utcnow
 from app.core.config import Settings
 from app.db.database import Database
@@ -29,16 +30,21 @@ def create_app(settings=None):
         yield
         database.engine.dispose()
 
-    app = FastAPI(title="TextCast 后端最小闭环（模拟服务）", version="0.3.0", lifespan=lifespan,
-        description="本地单用户调研框架。固定开发身份，无登录认证。脚本与音频生成各等待10秒后返回内置测试结果。")
+    app = FastAPI(title="TextCast 生成服务", version="0.4.0", lifespan=lifespan,
+        description="项目、脚本、声音库与数据库任务服务。支持 Mock 和本地 HTTP 模型，实际能力以部署配置及产物元数据为准。")
     app.state.settings, app.state.database = settings, database
     app.state.storage = LocalStorage(settings.storage_dir)
-    app.add_middleware(CORSMiddleware, allow_origins=[settings.cors_origin], allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["Content-Type", "Idempotency-Key"], expose_headers=["X-Request-Id", "Location", "Retry-After"])
+    app.add_middleware(CORSMiddleware, allow_origins=[settings.cors_origin], allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=["Content-Type", "Idempotency-Key", "X-CSRF-Token"], expose_headers=["X-Request-Id", "Location", "Retry-After"])
 
     @app.middleware("http")
     async def request_id(request, call_next):
         request.state.request_id = new_token()
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            origin = request.headers.get("origin")
+            if ((not origin and request.headers.get("sec-fetch-site") == "cross-site") or origin and
+                origin != settings.cors_origin and origin != f"{request.url.scheme}://{request.headers.get('host')}"):
+                return error(request, "CSRF_FAILED", "请求来源校验失败", 403)
         response = await call_next(request)
         response.headers["X-Request-Id"] = request.state.request_id
         response.headers["Cache-Control"] = "no-store"
@@ -87,11 +93,16 @@ def create_app(settings=None):
             user = session.scalar(select(User).where(User.id == settings.development_user_id))
             if user is None:
                 raise BusinessError("NOT_INITIALIZED", "请先执行 python -m app.bootstrap", 503)
-        return {"status": "ready", "provider": "mock", "authentication": "fixed_development_user"}
+        return {"status": "ready", "provider": settings.audio_provider, "llm_provider": settings.llm_provider,
+                "tts_engine_id": settings.tts_engine_id,
+                "authentication": "account_service" if os.environ.get("TEXTCAST_AUTH_URL") else "fixed_development_user"}
 
     app.include_router(projects.router)
     app.include_router(generation.router)
     app.include_router(resources.router)
+    app.include_router(voices.router)
+    app.include_router(role_management.router)
+    app.include_router(workflow.router)
     app.include_router(configuration.router)
     return app
 

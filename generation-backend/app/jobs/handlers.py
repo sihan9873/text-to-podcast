@@ -12,7 +12,7 @@ def locked_task(session, job):
     project = session.scalar(select(Project).where(Project.id == job["project_id"]).with_for_update())
     task = session.scalar(select(Task).where(Task.id == job["id"], Task.status == "running",
         Task.lease_token == job["token"], Task.lease_expires_at > utcnow()).with_for_update())
-    if task is None or project is None or project.active_task_id != task.id:
+    if task is None or (task.task_type != "voice_preview" and (project is None or project.active_task_id != task.id)):
         raise BusinessError("TASK_STATE_CONFLICT", "任务已失效，拒绝发布过期结果")
     return task, project
 
@@ -21,8 +21,9 @@ def complete(task, project, result):
     task.status, task.stage, task.progress = "succeeded", "completed", 100
     task.result_json, task.finished_at = result, utcnow()
     task.lease_expires_at = None
-    project.active_task_id = None
-    project.updated_at = utcnow()
+    if project is not None:
+        project.active_task_id = None
+        project.updated_at = utcnow()
 
 
 def publish_script(database, job, generated):
@@ -60,17 +61,20 @@ def publish_audio(database, storage, job, generated):
     try:
         with database.sessions() as session, transaction(session):
             task, project = locked_task(session, job)
-            audio = session.get(AudioVersion, task.audio_version_id)
-            if audio is None or audio.status != "running":
+            audio = session.get(AudioVersion, task.audio_version_id) if task.audio_version_id is not None else None
+            preview = task.task_type == "voice_preview"
+            if not preview and (audio is None or audio.status != "running"):
                 raise BusinessError("TASK_STATE_CONFLICT", "音频版本状态不匹配")
             asset = Asset(user_id=task.user_id, object_key=key, size_bytes=size,
-                duration_ms=generated.duration_ms, sha256=sha, metadata_json=deepcopy(generated.metadata))
+                duration_ms=generated.duration_ms, sha256=sha, metadata_json=deepcopy(generated.metadata),
+                kind="voice_preview" if preview else "full_audio")
             session.add(asset)
             session.flush()
-            audio.status, audio.selection_revision, audio.current_asset_id = "ready", 1, asset.id
+            if audio is not None:
+                audio.status, audio.selection_revision, audio.current_asset_id = "ready", 1, asset.id
             task.result_asset_id = asset.id
             task.completed_sentences = task.total_sentences
-            complete(task, project, {"audio_version_id": audio.id, "version": audio.version,
+            complete(task, project, {"audio_version_id": audio.id if audio else None, "version": audio.version if audio else None,
                 "selection_revision": 1, "asset_id": asset.id,
                 "play_url": f"/api/v1/audio-assets/{asset.id}/play",
                 "download_url": f"/api/v1/audio-assets/{asset.id}/download"})

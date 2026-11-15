@@ -30,6 +30,7 @@ export interface RoleListParams extends PaginationParams {
 }
 
 export const configApi = {
+  capabilities: () => http.get<{ audio_preview: boolean; sentence_audio: boolean; voice_cloning: boolean }>('/capabilities'),
   /** C-01 可选 LLM 模型 */
   models: (params?: ModelListParams) =>
     http.get<Paginated<LlmModelItem>>('/models', params as Record<string, string | number | undefined>),

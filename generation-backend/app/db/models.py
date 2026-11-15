@@ -122,7 +122,8 @@ class ScriptSentence(Record, Base):
 class Task(Record, Base):
     __tablename__ = "tasks"
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"))
+    voice_version_id: Mapped[int | None] = mapped_column(ForeignKey("voice_versions.id"))
     task_type: Mapped[str] = mapped_column(String(16))
     audio_action: Mapped[str | None] = mapped_column(String(16))
     script_id: Mapped[int | None] = mapped_column(ForeignKey("scripts.id"))
@@ -147,7 +148,9 @@ class Task(Record, Base):
     lease_token: Mapped[str | None] = mapped_column(String(36))
     __table_args__ = (UniqueConstraint("user_id", "idempotency_key"),
                       Index("ix_tasks_queue", "status", "created_at", "id"),
-                      CheckConstraint("status IN ('queued','running','succeeded','failed')"), {"sqlite_autoincrement": True})
+                      CheckConstraint("status IN ('queued','running','succeeded','failed')", name="ck_task_status"),
+                      CheckConstraint("(task_type = 'voice_preview' AND project_id IS NULL AND voice_version_id IS NOT NULL) OR (task_type IN ('script','audio') AND project_id IS NOT NULL AND voice_version_id IS NULL)", name="ck_task_subject"),
+                      {"sqlite_autoincrement": True})
 
 
 class Asset(Record, Base):
@@ -174,3 +177,20 @@ class AudioVersion(Record, Base):
     selection_revision: Mapped[int] = mapped_column(Integer, default=0)
     current_asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.id"))
     __table_args__ = (UniqueConstraint("project_id", "version"), {"sqlite_autoincrement": True})
+
+
+class VoiceProfile(Record, Base):
+    __tablename__ = "voice_profiles"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(16), default="enabled")
+
+
+class VoiceVersion(Record, Base):
+    __tablename__ = "voice_versions"
+    profile_id: Mapped[int] = mapped_column(ForeignKey("voice_profiles.id"), unique=True)
+    reference_asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"))
+    reference_text: Mapped[str] = mapped_column(Text)
+    language: Mapped[str] = mapped_column(String(32), default="Chinese")
+    engine_id: Mapped[str] = mapped_column(String(100), default="qwen3-base")
+    authorized_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

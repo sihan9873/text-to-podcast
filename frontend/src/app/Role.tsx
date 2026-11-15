@@ -1,5 +1,6 @@
 // src/app/Roles.tsx
 import * as React from "react"
+import { VoiceLibrary } from '@/components/audio/VoiceLibrary'
 import {
   Loader2,
   Plus,
@@ -93,6 +94,7 @@ export default function RolesPage() {
       </div>
 
       {/* Filter */}
+      <VoiceLibrary />
       <div className="flex items-center gap-2">
         {(["", "enabled", "disabled"] as const).map((s) => (
           <button
@@ -521,7 +523,7 @@ function RoleFormDialog({ role, onClose, onSaved }: RoleFormDialogProps) {
               </AppButton>
             </>
           ) : (
-            "暂无可用的语音能力"
+            "暂无可用声音。请先保存克隆声音，或检查语音服务配置。"
           )}
         </div>
       </DialogShell>

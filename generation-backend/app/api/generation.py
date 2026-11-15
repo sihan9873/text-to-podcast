@@ -17,13 +17,13 @@ PathId = Annotated[int, Path(gt=0)]
 router = APIRouter(prefix="/api/v1")
 
 
-@router.post("/projects/{project_id}/script/generate", status_code=202, response_model=Envelope[TaskAccepted], tags=["脚本模块"], summary="提交模拟脚本任务（10秒）")
+@router.post("/projects/{project_id}/script/generate", status_code=202, response_model=Envelope[TaskAccepted], tags=["脚本模块"], summary="提交脚本生成任务")
 def generate_script(project_id: PathId, body: ScriptGenerate, request: Request, response: Response,
                     session: SessionDep, user: UserDep, key: IdempotencyDep):
     data, response.status_code = submit(session, user, project_id, "script", body, key, request.app.state.settings)
     response.headers["Location"] = data["status_url"]
     response.headers["Retry-After"] = "1"
-    return envelope(request, data, "模拟脚本任务")
+    return envelope(request, data, "模拟脚本任务" if request.app.state.settings.llm_provider == "mock" else "脚本任务已受理")
 
 
 @router.get("/scripts/{script_id}", response_model=Envelope[ScriptView], tags=["脚本模块"], summary="脚本详情")
@@ -36,13 +36,15 @@ def confirm(script_id: PathId, body: ConfirmScript, request: Request, session: S
     return envelope(request, confirm_script(session, user, script_id, body))
 
 
-@router.post("/projects/{project_id}/audio/generate", status_code=202, response_model=Envelope[TaskAccepted], tags=["语音模块"], summary="提交模拟音频任务（10秒）")
+@router.post("/projects/{project_id}/audio/generate", status_code=202, response_model=Envelope[TaskAccepted], tags=["语音模块"], summary="提交全文音频任务")
 def generate_audio(project_id: PathId, body: AudioGenerate, request: Request, response: Response,
                    session: SessionDep, user: UserDep, key: IdempotencyDep):
     data, response.status_code = submit(session, user, project_id, "audio", body, key, request.app.state.settings)
     response.headers["Location"] = data["status_url"]
     response.headers["Retry-After"] = "1"
-    return envelope(request, data, "模拟音频任务：返回固定测试音，非正文朗读")
+    settings = request.app.state.settings
+    simulated = settings.audio_provider == "mock" or settings.tts_engine_id == "mock"
+    return envelope(request, data, "模拟音频任务：输出测试音，非正文朗读" if simulated else "音频任务已受理")
 
 
 @router.get("/tasks/{task_id}", response_model=Envelope[dict], tags=["任务模块"], summary="查询任务状态")
@@ -50,5 +52,6 @@ def get_task(task_id: PathId, request: Request, session: SessionDep, user: UserD
     task = session.get(Task, task_id)
     if task is None or task.user_id != user:
         raise BusinessError("RESOURCE_NOT_FOUND", "任务不存在", 404)
-    owned_project(session, task.project_id, user)
+    if task.project_id is not None:
+        owned_project(session, task.project_id, user)
     return envelope(request, task_view(task))

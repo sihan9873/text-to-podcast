@@ -1,0 +1,78 @@
+{
+  "date": "2026-11-14",
+  "branch": "feat/voice-cloning",
+  "base_commit": "203799ffdd3a76d7140ed3de159b45cacf609c0b",
+  "implementation": "Private reference uploads, immutable voice versions, role binding, Base SDK adapter, preview jobs, full MP3 generation, current frontend integration and auth contract adaptation",
+  "checks": {
+    "account_backend": {
+      "passed": 18,
+      "failed": 0,
+      "note": "Unchanged by this upstream merge; retained prior verification"
+    },
+    "generation_backend": {
+      "passed": 48,
+      "failed": 0
+    },
+    "tts_unittest": {
+      "run": 30,
+      "passed": 29,
+      "skipped": 1,
+      "failed": 0,
+      "skip_reason": "Existing real CustomVoice GPU test requires explicit opt-in"
+    },
+    "frontend": {
+      "typecheck": "passed",
+      "unit_tests_passed": 22,
+      "lint_errors": 0,
+      "lint_warnings": 4,
+      "build": "passed",
+      "build_warnings": [
+        "Existing Project.tsx dynamic import also imported statically",
+        "Main bundle slightly exceeds 500 kB"
+      ]
+    },
+    "compileall": "passed",
+    "git_diff_check": "passed",
+    "llm_unittest": {
+      "passed": 5,
+      "failed": 0
+    }
+  },
+  "environment": {
+    "account_and_generation": "Existing podcast-backend Conda environment",
+    "fastapi": "0.162.2",
+    "starlette": "1.10.0",
+    "pydantic": "2.14.3",
+    "sqlalchemy": "2.0.57",
+    "alembic": "1.20.1",
+    "pytest": "9.2.0",
+    "tts": "Existing podcast-tts-service environment, unittest; no model SDK loaded",
+    "frontend": "Existing local dependencies reused through ignored node_modules links; Node 22.19.0, TypeScript 6.0.3, Vitest 5.0.5, Vite 8.3.4",
+    "frozen_lock_install_performed": false,
+    "new_packages_installed": false,
+    "sandbox_test_workaround": "Temporary /tmp/podcast_run_tests.py and /tmp/podcast-test-bootstrap/sitecustomize.py schedule a 20 ms asyncio loop poll to avoid observed selector wakeup hangs in cross-thread TestClient requests. The latter also applies to test subprocesses. No repository application code or test assertions are changed by the workaround."
+  },
+  "evidence_scope": [
+    "ASGI HTTP boundaries, SQLite migrations and task persistence",
+    "Private audio validation using in-memory synthetic test recordings",
+    "SDK adapter and HTTP upstream test doubles explicitly identified as tests",
+    "Real FFmpeg normalization, MP3 encoding and decoding",
+    "Two cloned role IDs dispatched and preserved in version metadata",
+    "Ownership, disabled voices, idempotency, failed synthesis, expired leases, restart, script revisions and original audio retention",
+    "Merged automatic long-document segmentation, coherent LLM orchestration and progress updates with cloned-voice audio generation"
+  ],
+  "not_verified": [
+    "Real Base model loading or GPU inference",
+    "Human speaker similarity or naturalness",
+    "GPU memory peak, cold start or real-time factor",
+    "Real TCP multi-service end-to-end execution",
+    "Browser interaction and visual rendering",
+    "Exact frozen-lock dependency environment"
+  ],
+  "pending_inputs": "Local Qwen3-TTS Base model path and an authorized reference recording with its accurate transcript",
+  "user_assets_modified": false,
+  "model_weights_downloaded": false,
+  "cuda_or_pytorch_modified": false,
+  "integrated_remote_commit": "0ca2ed813a00466794e740ac47cf47d162fab80d",
+  "local_feature_checkpoint": "248bf3daaa07b828f1120bbcdf894ec51b4a27ac"
+}

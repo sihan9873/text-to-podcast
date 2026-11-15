@@ -41,6 +41,31 @@ interface RequestOptions {
   formData?: FormData;
   /** 需要返回原始 Response（如音频流） */
   raw?: boolean;
+  binary?: Blob;
+}
+
+// The business API uses integer IDs; the existing UI keeps IDs as strings.
+const integerIdKeys = new Set(['project_id', 'script_id', 'profile_id', 'role_id', 'sentence_id',
+  'task_id', 'asset_id', 'audio_version_id', 'model_id', 'reference_asset_id', 'voice_profile_id', 'voice_version_id']);
+function encodeIds(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(encodeIds);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) =>
+    [k, integerIdKeys.has(k) && typeof v === 'string' && /^[1-9][0-9]*$/.test(v) && Number.isSafeInteger(Number(v)) ? Number(v) : encodeIds(v)]));
+  return value;
+}
+function decodeIds(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(decodeIds);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) =>
+    [k, (k.endsWith('_id') || k === 'confirmed_by') && typeof v === 'number' ? String(v) : decodeIds(v)]));
+  return value;
+}
+
+function accountData(path: string, value: Record<string, unknown>): unknown {
+  const user = value.user as Record<string, unknown> | undefined;
+  const normalized = user ? { user_id: String(user.id), username: user.username, display_name: user.displayName,
+    role: user.role, status: user.status, created_at: user.createdAt } : null;
+  if (path === '/auth/register') return normalized;
+  return { user: normalized, expires_at: value.expiresAt ?? null, csrf_token: '' };
 }
 
 function buildUrl(path: string, query?: RequestOptions['query']): string {
@@ -72,7 +97,7 @@ export function newIdempotencyKey(): string {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, query, idempotencyKey, formData, raw } = options;
+  const { method = 'GET', body, query, idempotencyKey, formData, raw, binary } = options;
 
   const headers: Record<string, string> = {};
 
@@ -86,11 +111,17 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   let payload: BodyInit | undefined;
-  if (formData) {
+  if (binary) {
+    headers['Content-Type'] = 'application/octet-stream';
+    payload = binary;
+  } else if (formData) {
     payload = formData; // 浏览器自动设置 multipart boundary
   } else if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
-    payload = JSON.stringify(body);
+    const mapped = path === '/auth/register' ? { username: (body as Record<string, unknown>).username,
+      password: (body as Record<string, unknown>).password,
+      displayName: (body as Record<string, unknown>).display_name || (body as Record<string, unknown>).username } : body;
+    payload = JSON.stringify(encodeIds(mapped));
   }
 
   const res = await fetch(buildUrl(path, query), {
@@ -99,6 +130,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     body: payload,
     credentials: 'include', // 携带 Cookie
   });
+  if (res.ok && path === '/auth/logout' && res.status === 204) return { logged_out: true } as T;
   // Business requests can discover an expired session after the guard loaded.
   // Auth endpoints report their own errors without interrupting the form.
   if (res.status === 401 && !path.startsWith('/auth/')) {
@@ -124,6 +156,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     // 非 JSON
   }
 
+  if (res.ok && path.startsWith('/auth/') && json && !('code' in json)) {
+    return accountData(path, json as unknown as Record<string, unknown>) as T;
+  }
   if (!res.ok || (json && json.code !== 'OK')) {
     if (json) {
       throw new ApiError(json.code, json.message, res.status, json.request_id);
@@ -132,7 +167,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   // 同步成功返回 data
-  return (json ? json.data : null) as T;
+  return decodeIds(json ? json.data : null) as T;
 }
 
 async function safeParseError(res: Response): Promise<ApiError> {
@@ -158,6 +193,7 @@ export const http = {
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
   upload: <T>(path: string, formData: FormData) =>
     request<T>(path, { method: 'POST', formData }),
+  binary: <T>(path: string, binary: Blob) => request<T>(path, { method: 'POST', binary }),
   raw: (path: string, query?: RequestOptions['query']) =>
     request<Response>(path, { method: 'GET', query, raw: true }),
 };

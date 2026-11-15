@@ -1,5 +1,6 @@
 // src/Audio.tsx
 import * as React from "react"
+import { useQuery } from '@tanstack/react-query'
 import { RoleVoiceEditorDialog, type RoleDraft } from '@/components/audio/RoleVoiceEditorDialog'
 import {
   Play,
@@ -36,6 +37,7 @@ import {
   scriptsApi,
   pollTask,
   downloadAudio,
+  configApi,
 } from "@/api"
 
 import type {
@@ -538,6 +540,7 @@ interface GeneratePanelProps {
 }
 
 function GeneratePanel({ projectId, script, confirmed, onAccepted }: GeneratePanelProps) {
+  const { data: capabilities } = useQuery({ queryKey: ['capabilities'], queryFn: configApi.capabilities });
   const [previewLoading, setPreviewLoading] = React.useState(false)
   const [previewPlayUrl, setPreviewPlayUrl] = React.useState<string | null>(null)
   const [previewError, setPreviewError] = React.useState<string | null>(null)
@@ -589,10 +592,11 @@ function GeneratePanel({ projectId, script, confirmed, onAccepted }: GeneratePan
     setFullTask(null)
     try {
       const accepted = await audioApi.generate(projectId, expected, newIdempotencyKey())
-      await pollTask(accepted.task_id, {
+      const task = await pollTask(accepted.task_id, {
         signal: controller.signal,
         onUpdate: setFullTask,
       })
+      if (task.status === 'failed') setFullError(task.error_message ?? '生成失败');
       onAccepted()
     } catch (e) {
       if (isAbort(e)) return
@@ -653,14 +657,14 @@ function GeneratePanel({ projectId, script, confirmed, onAccepted }: GeneratePan
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
-          <AppButton
+          {capabilities?.audio_preview && <AppButton
             onClick={runPreview}
             disabled={!confirmed || busy}
             variant="outline"
           >
             {previewLoading ? <Loader2 className="animate-spin" /> : <Play />}
             试听前三句
-          </AppButton>
+          </AppButton>}
           <AppButton onClick={runFull} disabled={!confirmed || busy}>
             {fullLoading ? <Loader2 className="animate-spin" /> : <FileAudio />}
             生成全文音频
@@ -862,7 +866,7 @@ function AudioVersionView({
       </AppCard>
 
       {/* Two-column: sentence list + active sentence panel */}
-      <div className="grid gap-4 lg:grid-cols-[minmax(260px,320px)_1fr] lg:items-start">
+      {detail.supports_sentence_audio !== false && <div className="grid gap-4 lg:grid-cols-[minmax(260px,320px)_1fr] lg:items-start">
         <SentenceList
           sentences={sentences}
           activeId={activeSentenceId}
@@ -885,7 +889,7 @@ function AudioVersionView({
             </AppCardContent>
           </AppCard>
         )}
-      </div>
+      </div>}
     </div>
   )
 }

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TextCast 本地测试控制台</title>
+<style>
+  :root{color-scheme:dark;font-family:system-ui,sans-serif;background:#10151f;color:#e5eaf4}
+  body{max-width:1200px;margin:auto;padding:28px}h1{font-size:28px;margin:0}h2{font-size:18px;margin:0 0 16px}
+  p{color:#aebbd0;line-height:1.7}section{background:#192231;border:1px solid #304057;border-radius:14px;padding:22px;margin:18px 0}
+  button,select,input,a.button{font:inherit;border:1px solid #456084;border-radius:8px;padding:10px 14px;background:#243650;color:#edf4ff;cursor:pointer;text-decoration:none;display:inline-block}input{width:min(90%,680px);cursor:text}#settings label{display:block;margin:12px 0 5px}
+  button:hover,a.button:hover{background:#345176}button:disabled{opacity:.45;cursor:wait}.primary{background:#275db1} .danger{background:#703941}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.grid section{margin:0}
+  #message{white-space:pre-wrap;color:#ffd08a;min-height:25px;margin:12px 0}pre{background:#0b111a;border-radius:8px;padding:16px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:470px;overflow:auto;font:13px/1.6 ui-monospace,monospace}
+  .service{padding:8px 12px;border:1px solid #456084;border-radius:8px}.passed{color:#82dfb1}.failed,.cancelled{color:#ff9f9f}.running{color:#ffdc8c}
+  #jobs{max-height:240px;overflow:auto}#jobs button{display:block;width:100%;text-align:left;margin:6px 0}a{color:#91bdff}small{color:#aebbd0}audio{width:100%;margin:8px 0}#artifacts{overflow-wrap:anywhere}.artifact{border-top:1px solid #304057;padding:12px 0}
+  @media(max-width:760px){body{padding:16px}.grid{grid-template-columns:1fr}section{padding:16px}}
+</style>
+<h1>TextCast 本地测试控制台</h1>
+<p>按按钮执行仓库脚本，查看实时日志和测试产物。每次启动使用新的隔离数据库；停止服务后保留报告。</p>
+<section>
+  <h2>1. 准备环境</h2>
+  <div class="row"><button data-task="preflight">检查工具和 Python 依赖</button><button data-task="install">首次安装开发依赖（联网）</button></div>
+  <p>已有独立环境优先复用，安装只新建缺失的模块 .venv，已有 .venv 保持原样。真实模型 SDK、权重与 GPU 环境需按模型指南准备，不会随启动自动下载。</p>
+  <details><summary>模型、设备和 Python 环境设置（保存后下轮生效）</summary><div id="settings"></div><button id="save-settings" style="margin-top:16px">保存本地设置</button></details>
+</section>
+<section>
+  <h2>2. 启动本轮测试服务</h2>
+  <div class="row">
+    <label for="mode">运行模式</label><select id="mode"><option value="mock">M1 · 真实业务服务 + Mock 生成</option><option value="http-mock">M2 · HTTP Mock TTS + FFmpeg</option><option value="customvoice">R1 · 真实 LLM + Qwen 预设声音</option><option value="clone">R2 · 真实 LLM + Qwen 声音克隆</option></select>
+    <button id="start" class="primary">初始化并启动全部服务</button><button id="restart">重启当前服务（保留数据）</button><button id="stop" class="danger">停止服务 / 取消任务</button>
+    <a class="button" href="http://localhost:5173" target="_blank" rel="noreferrer">打开业务前端 ↗</a>
+  </div>
+  <p>本地管理员：admin / TextCast123!。M1/M2 输出测试音，不能作为真实朗读验收。R2 请在业务页面上传授权录音、填写转写、保存声音并绑定角色，再生成音频。</p>
+  <small id="run">尚未启动</small><div id="services" class="row" style="margin-top:14px"></div>
+</section>
+<div class="grid">
+  <section><h2>3. 自动检查与完整链路</h2><div class="row" id="tasks"></div><p>闭环验证包含真实登录、建项目、提交原文、Worker 生成、确认脚本、音频下载及 Range 播放校验。真实模型可能需要较长时间，日志会显示任务状态。</p></section>
+  <section><h2>4. 执行记录</h2><div id="jobs"></div></section>
+</div>
+<div id="message" role="status" aria-live="polite"></div>
+<section><div class="row"><h2 style="margin:0">实时输出</h2><label for="log-source">日志来源</label><select id="log-source"><option value="">请选择任务或服务</option></select><button id="download-log">下载当前日志</button></div><pre id="log" tabindex="0">执行任务后在这里查看输出、失败原因和退出码。</pre></section>
+<section><h2>5. 脚本、报告与音频</h2><div id="artifacts">尚无产物</div></section>
+<script>
+const token='__TOKEN__';
+const $=id=>document.getElementById(id);
+let pending=false,lastState='',lastArtifacts='',lastOptions='',logText='';
+const settings={PODCAST_LLM_MODEL_PATH:'LLM 模型绝对路径',PODCAST_CUSTOMVOICE_MODEL_PATH:'CustomVoice 模型绝对路径',PODCAST_BASE_MODEL_PATH:'Base 克隆模型绝对路径',LLM_DEVICE:'LLM 设备（cpu 或 cuda:0）',TTS_QWEN_DEVICE:'TTS 设备（cpu 或 cuda:0）',PODCAST_BACKEND_PYTHON:'账号 Python 绝对路径',PODCAST_GENERATION_BACKEND_PYTHON:'生成服务 Python 绝对路径',PODCAST_LLM_PYTHON:'LLM Python 绝对路径',PODCAST_TTS_PYTHON:'Mock TTS Python 绝对路径',PODCAST_TTS_REAL_PYTHON:'真实 TTS Python 绝对路径'};
+Object.assign(settings,{PODCAST_NODE_BINARY:'Node.js 可执行文件绝对路径（PATH 未配置时填写）',PODCAST_PNPM_BINARY:'pnpm 可执行文件绝对路径（PATH 未配置时填写）'});
+for(const [key,label] of Object.entries(settings)){const l=document.createElement('label');l.htmlFor=key;l.textContent=label;const input=document.createElement('input');input.id=key;input.placeholder='留空使用默认值 / 自动发现';$('settings').append(l,input)}
+async function api(path,body){
+  const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Console-Token':token},body:JSON.stringify(body)});
+  const data=await response.json();if(!response.ok)throw Error(data.error||'请求失败');return data;
+}
+async function act(path,body){
+  if(pending)return;pending=true;$('message').textContent='正在提交…';
+  try{const result=await api(path,body);$('message').textContent=result.id?'任务已提交，输出自动刷新。':'已停止本控制台启动的服务和任务。';await refresh();if(result.id)$('log-source').value=result.id;await refreshLog();}
+  catch(e){$('message').textContent=e.message}finally{pending=false}
+}
+function button(label,action){const b=document.createElement('button');b.textContent=label;b.onclick=()=>act('/api/task',{action});return b;}
+document.querySelectorAll('[data-task]').forEach(b=>b.onclick=()=>act('/api/task',{action:b.dataset.task}));
+$('start').onclick=()=>act('/api/start',{mode:$('mode').value});$('stop').onclick=()=>act('/api/stop',{});
+$('restart').onclick=()=>act('/api/restart',{});
+$('save-settings').onclick=()=>act('/api/settings',Object.fromEntries(Object.keys(settings).map(k=>[k,$(k).value.trim()])));
+$('log-source').onchange=refreshLog;
+$('download-log').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([logText],{type:'text/plain;charset=utf-8'}));a.download=($('log-source').value||'console')+'.log';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+async function refreshLog(){const name=$('log-source').value;if(!name)return;try{const data=await api('/api/log/'+encodeURIComponent(name));const node=$('log');const nearBottom=node.scrollHeight-node.scrollTop-node.clientHeight<50;logText=data.log;node.textContent=logText;if(nearBottom)node.scrollTop=node.scrollHeight}catch(e){$('message').textContent=e.message}}
+async function refresh(){
+  const state=await api('/api/state');
+  if(!lastState){for(const [action,label] of Object.entries(state.tasks)){if(!['preflight','install'].includes(action))$('tasks').append(button(label,action))}for(const key of Object.keys(settings))$(key).value=state.settings[key]||''}
+  const busy=state.jobs.some(j=>j.status==='running'),live=Object.values(state.services).some(s=>s.status==='running');
+  document.querySelectorAll('[data-task],#tasks button,#start').forEach(b=>b.disabled=busy);
+  $('start').disabled=busy||live;
+  $('restart').disabled=busy||!state.folder;
+  if(JSON.stringify(state)!==lastState){
+    lastState=JSON.stringify(state);$('run').textContent=state.folder?'当前模式：'+state.mode+' ｜ 数据目录：'+state.folder:'尚未启动';
+    $('services').replaceChildren();
+    for(const [name,service] of Object.entries(state.services)){const b=button('',null);b.className='service '+service.status;b.textContent=name+' · '+service.status+' · PID '+service.pid;b.onclick=()=>{$('log-source').value=name;refreshLog()};$('services').append(b)}
+    $('jobs').replaceChildren();for(const job of state.jobs){const b=document.createElement('button');b.className=job.status;b.textContent=(state.tasks[job.action]||'初始化并启动')+' · '+job.status+(job.exit_code===null?'':' · 退出码 '+job.exit_code);b.onclick=()=>{$('log-source').value=job.id;refreshLog()};$('jobs').append(b)}
+    const options=[...Object.keys(state.services).map(name=>[name,'服务：'+name]),...state.jobs.map(j=>[j.id,'任务：'+(state.tasks[j.action]||'初始化并启动')+' '+j.id.slice(0,6)])];
+    if(JSON.stringify(options)!==lastOptions){lastOptions=JSON.stringify(options);const current=$('log-source').value;$('log-source').replaceChildren(new Option('请选择任务或服务',''),...options.map(([value,label])=>new Option(label,value)));$('log-source').value=current}
+  }
+  const artifacts=await api('/api/artifacts');if(JSON.stringify(artifacts)!==lastArtifacts){lastArtifacts=JSON.stringify(artifacts);$('artifacts').replaceChildren();if(!artifacts.length)$('artifacts').textContent='闭环验证成功后，报告、脚本和音频将出现在这里。';for(const path of artifacts){const row=document.createElement('div');row.className='artifact';const url='/artifacts/'+path.split('/').map(encodeURIComponent).join('/');const link=document.createElement('a');link.href=url;link.textContent=path;link.target='_blank';row.append(link);if(/\.(mp3|wav)$/.test(path)){const audio=document.createElement('audio');audio.controls=true;audio.preload='none';audio.src=url;row.append(audio)}$('artifacts').append(row)}}
+  await refreshLog();
+}
+async function poll(){try{await refresh()}catch(e){$('message').textContent='控制台连接中断：'+e.message}setTimeout(poll,1200)}poll();
+</script>
+</html>

@@ -72,6 +72,9 @@ jobs:
         working-directory: backend
         run: python -m pytest
 
+      - name: Test local console supervisor and HTTP boundaries
+        run: python -m unittest discover -s scripts/tests -v
+
   generation-backend:
     runs-on: ubuntu-latest
     timeout-minutes: 15

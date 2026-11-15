@@ -19,6 +19,20 @@ text-to-podcast/
 
 架构决策与模块边界见 [`docs/unified-development-baseline.md`](docs/unified-development-baseline.md)。
 
+## 推荐：浏览器按钮测试
+
+在仓库根目录只启动一次控制台：
+
+```bash
+python scripts/local_console.py
+```
+
+打开 **http://localhost:8765**，按页面按钮检查/安装开发环境、初始化隔离数据、启动全部服务、执行各模块测试和短文/长文闭环，直接查看日志、脚本、报告及音频。Windows 也可双击 `start-local.bat`；Linux/WSL 可运行 `bash start-local.sh`。
+
+业务前端为 **http://localhost:5173**，控制台启动的隔离库管理员是 `admin / TextCast123!`。M1/M2 使用测试音；真实模型需要准备权重和独立环境，再选择 R1/R2。完整说明见 [本地控制台指南](docs/local-console.md)，本次代码评估和实测见 [可行性检查](docs/feasibility-review.md)。
+
+当前版本从环境准备、隔离数据、服务启动到长文、声音克隆和异常恢复的完整验收步骤见 [完整验收流程](docs/acceptance-workflow.md)。
+
 ## 先运行前端 Mock
 
 需要 Node.js 22.12+、pnpm 11+。
@@ -81,16 +95,18 @@ LLM/TTS 的模型准备、独立环境和启动方式见 [`docs/local-llm.md`](d
 
 - 最新前端已成为唯一入口，旧版登录页、旧 API 客户端和旧工作流已移除。
 - 账号后端、生成后端、LLM 和 TTS 服务代码已位于同一开发分支。
-- 前端 lint、11 项测试、TypeScript 和生产构建通过。
+- 前端 lint、单元测试、TypeScript 和生产构建已纳入检查。
 - CI 已覆盖前端、账号后端、生成后端、LLM 和 TTS 的无模型检查。
 - 支持粘贴或上传最长 100,000 字符的 TXT/Markdown，按自然段或预计朗读时长预览并保存有序分段。
 - 默认模型流程仍允许 Mock；真实 Qwen 权重和音质不因代码合并而自动视为通过。
 
 ## 下一阶段已知工作
 
-- 对齐新前端与账号服务的认证响应、字段命名和 CSRF 契约。
+语音克隆功能分支已补充私有声音库、Base 引擎、角色绑定与任务快照接线，部署与验证边界见 [语音克隆说明](docs/voice-cloning.md)。真实 Base 模型音质仍需专项验收。
+
+- 本功能分支已对齐账号响应与字段命名，并为 Cookie 写请求添加来源校验。
 - 在真实服务模式下跑通登录、项目、脚本、确认、音频生成、播放和下载。
-- 让真实 LLM 按已保存的 `source_chunks` 逐段生成并汇总脚本；当前本地 LLM 单次仍限制 5,000 字。
+- 已合入长文本自动分段、全局大纲、携带前文记忆的分节生成和统一润色；真实模型对长文的事实准确性、衔接及耗时仍需专项验收，单次模型输入及最终台词仍限制 5,000 字。
 - 修复或固定 Python 测试依赖，确保所有 CI 任务稳定通过。
 - `feat/backend-tts-integration` 保留为历史参考；其 `llm/`、`tts/` 源码与本基线一致，不再整包合并以免覆盖账号后端。
 

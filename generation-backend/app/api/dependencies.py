@@ -48,8 +48,14 @@ def current_user(request: Request):
                 session.add(user)
                 session.flush()
                 template = session.get(RoleProfile, ROLE_ID)
-                session.add(RoleProfile(user_id=user.id, name="主持人",
-                    description="", voice_config=template.voice_config))
+                settings = request.app.state.settings
+                if settings.audio_provider != "local_http":
+                    session.add(RoleProfile(user_id=user.id, name="主持人",
+                        description="", voice_config=template.voice_config))
+                elif settings.tts_engine_id != "qwen3-base":
+                    session.add(RoleProfile(user_id=user.id, name="主持人", description="本地语音",
+                        voice_config={"tts_provider": "local_http", "tts_model": settings.tts_engine_id,
+                                      "voice_id": "host_a", "style": None, "speed": 1.0, "extra_params": {}}))
                 session.commit()
             except IntegrityError:
                 session.rollback()

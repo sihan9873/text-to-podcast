@@ -1,5 +1,7 @@
 # Qwen 模型准备
 
+> 当前集成服务 TTS 使用 8002、LLM 使用 8003；下文旧独立服务端口仅作历史参考。模型下载、服务启动和试听已提供 [浏览器按钮](local-console.md)，下载成功后仍需实际推理验收。
+
 主引擎为 Qwen3-TTS 0.6B CustomVoice。Base 是克隆模型，不能替代 CustomVoice。
 仓库不含权重、GPU 包或 CUDA 安装器，也不会在启动/health 时下载。
 

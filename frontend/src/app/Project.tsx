@@ -20,10 +20,10 @@ import {
   type ActiveTaskSummary,
   type RoleProfileItem,
   //type TaskAccepted,
-  type TaskDetail,
 } from "@/api"
 
 import { AudioStatusBadge } from "./Audio"
+import { ScriptTaskFailure, isScriptTaskRunning } from "@/features/script-generation/ScriptTaskFailure"
 import { SourceInputPanel } from "@/features/source-input/SourceInputPanel"
 
 // ============================================================
@@ -149,67 +149,6 @@ function pickScriptTask(
   tasks: ActiveTaskSummary[] | undefined,
 ): ActiveTaskSummary | undefined {
   return tasks?.find((t) => t.task_type === "script")
-}
-
-/**
- * 轮询 P-03 直到 active_tasks 中不再有 script 任务。
- * 返回：成功后 invalidate scripts 列表；失败时取 T-01 拿 error。
- */
-function useScriptGenerationPolling(
-  projectId: string,
-  enabled: boolean,
-  onSettled: (finalTask: TaskDetail | null) => void,
-) {
-  const queryClient = useQueryClient()
-
-  React.useEffect(() => {
-    if (!enabled) return
-    let cancelled = false
-    let timer: ReturnType<typeof setInterval> | null = null
-
-    const tick = async () => {
-      try {
-        const detail = await projectsApi.detail(projectId)
-        if (cancelled) return
-        const scriptTask = pickScriptTask(detail.active_tasks)
-        if (scriptTask) {
-          // 还在跑：刷新缓存让 UI 更新阶段/进度
-          queryClient.setQueryData(["project", projectId], detail)
-          return
-        }
-        // 没有 script 任务了：停止轮询，刷新脚本列表
-        if (timer) clearInterval(timer)
-        queryClient.invalidateQueries({ queryKey: ["scripts", projectId] })
-        // 用最后一次 P-03 缓存里的 script 任务 ID 反查 T-01（若有）
-        // 由于 active_tasks 已清空，我们保存的 lastTaskId 从调用方传不进来，
-        // 这里退化为：拉一次最近任务列表，取最新 script 任务
-        try {
-          const list = await tasksApi.listByProject(projectId, {
-            page: 1,
-            page_size: 5,
-            task_type: "script",
-          })
-          const latest = list.items[0] ?? null
-          if (!cancelled) onSettled(latest)
-        } catch {
-          if (!cancelled) onSettled(null)
-        }
-      } catch (e) {
-        if (cancelled) return
-        // 网络错误：继续重试（不停止）
-        console.warn("轮询项目详情失败", e)
-      }
-    }
-
-    // 立即执行一次，再每 2 秒
-    void tick()
-    timer = setInterval(() => void tick(), 2000)
-
-    return () => {
-      cancelled = true
-      if (timer) clearInterval(timer)
-    }
-  }, [projectId, enabled, onSettled, queryClient])
 }
 
 // ============================================================
@@ -429,31 +368,38 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
 
   const [showGenerate, setShowGenerate] = React.useState(false)
 
-  // 是否有进行中的脚本生成任务（来自 P-03 active_tasks）
   const activeScriptTask = pickScriptTask(project?.active_tasks)
-  const isGenerating = !!activeScriptTask
+  const { data: scriptTasks, isError: scriptTasksError } = useQuery({
+    queryKey: ["script-tasks", projectId],
+    queryFn: () => tasksApi.listByProject(projectId, { page: 1, page_size: 1, task_type: "script" }),
+    refetchInterval: query => activeScriptTask || isScriptTaskRunning(query.state.data?.items[0]) ? 2000 : false,
+  })
+  const latestScriptTask = scriptTasks?.items[0]
+  const isGenerating = !!activeScriptTask || isScriptTaskRunning(latestScriptTask)
+  const generatingTask = activeScriptTask ?? (isScriptTaskRunning(latestScriptTask) && latestScriptTask ? {
+    ...latestScriptTask, status_url: `/api/tasks/${latestScriptTask.task_id}`,
+  } : undefined)
 
-  // 轮询：当有 script 任务时启动
-  const handleSettled = React.useCallback(
-    (finalTask: TaskDetail | null) => {
-      if (finalTask?.status === "failed") {
-        // 失败提示（非侵入）
-        console.warn(
-          `脚本生成失败：${finalTask.error_code} ${finalTask.error_message ?? ""}`,
-        )
-      }
-      // 不论成败都刷新项目详情与脚本列表
-      queryClient.invalidateQueries({ queryKey: ["project", projectId] })
-      queryClient.invalidateQueries({ queryKey: ["scripts", projectId] })
-    },
-    [projectId, queryClient],
-  )
+  // Poll the project only while work is active. Keep the terminal task separately,
+  // since completed/failed tasks disappear from the project's active_tasks.
+  React.useEffect(() => {
+    if (!isGenerating) return
+    const timer = setInterval(() => {
+      void queryClient.invalidateQueries({ queryKey: ["project", projectId] })
+    }, 2000)
+    return () => clearInterval(timer)
+  }, [isGenerating, projectId, queryClient])
 
-  useScriptGenerationPolling(projectId, isGenerating, handleSettled)
+  const settledTaskId = latestScriptTask && !isScriptTaskRunning(latestScriptTask) ? latestScriptTask.task_id : null
+  React.useEffect(() => {
+    if (!settledTaskId) return
+    void queryClient.invalidateQueries({ queryKey: ["project", projectId] })
+    void queryClient.invalidateQueries({ queryKey: ["scripts", projectId] })
+  }, [settledTaskId, projectId, queryClient])
 
-  // ---------- 生成成功后的回调：重新拉项目详情以恢复占位 ----------
   const handleGenerateSubmitted = React.useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["project", projectId] })
+    void queryClient.invalidateQueries({ queryKey: ["project", projectId] })
+    void queryClient.invalidateQueries({ queryKey: ["script-tasks", projectId] })
   }, [projectId, queryClient])
 
   // ---------- 渲染 ----------
@@ -556,12 +502,15 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
             </div>
           </div>
 
+          {scriptTasksError && <p role="alert" className="mt-4 text-sm text-destructive">任务状态读取失败，请检查服务连接后刷新页面；已有脚本会保留。</p>}
+          {!isGenerating && <ScriptTaskFailure task={latestScriptTask} onRetry={() => setShowGenerate(true)} />}
+
           {!hasSource ? (
             <Placeholder text="请先提交原文" hint="原文提交后即可生成脚本版本" />
           ) : !hasVersions && !isGenerating ? (
             <Placeholder text="还没有脚本版本" hint="点击“生成脚本”选择角色后创建第一个版本" />
           ) : (
-            <div className="mt-4 overflow-hidden rounded-lg border border-border">
+            <div id="script-task-status" className="mt-4 overflow-hidden rounded-lg border border-border">
               <table className="w-full text-sm">
                 <thead className="bg-secondary/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
                   <tr>
@@ -576,7 +525,7 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
                 </thead>
                 <tbody>
                   {/* 生成中占位行（位于顶部） */}
-                  {isGenerating && activeScriptTask && (
+                  {isGenerating && generatingTask && (
                     <tr className="border-t border-border bg-primary/5">
                       <td className="px-4 py-3 font-medium">
                         <span className="inline-flex items-center gap-1">
@@ -591,22 +540,17 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">—</td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        {formatStage(activeScriptTask.stage)}
+                        {formatStage(generatingTask.stage)}
                       </td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/15 px-2 py-0.5 text-[11px] font-medium text-blue-500">
                           <Loader2 className="size-3 animate-spin" />
-                          {formatStage(activeScriptTask.stage)}
+                          {formatStage(generatingTask.stage)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">—</td>
                       <td className="px-4 py-3 text-right text-muted-foreground">
-                        <button
-                          onClick={() => onNavigate(activeScriptTask.status_url)}
-                          className="text-xs text-primary hover:underline"
-                        >
-                          查看任务
-                        </button>
+                        <span className="text-xs">任务 {generatingTask.task_id}</span>
                       </td>
                     </tr>
                   )}

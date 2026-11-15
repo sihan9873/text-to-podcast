@@ -6,6 +6,7 @@
 import io
 import json
 import math
+import os
 import re
 import shutil
 import subprocess
@@ -62,9 +63,15 @@ class LocalTTSAudioGenerator:
         # 服务是显式配置的本地/LAN 地址；不经过环境中的外部 HTTP 代理。
 
     def _request(self, path, payload=None, audio=False):
+        headers = {"Content-Type": "application/json"} if payload is not None else {}
+        if path == "/v1/clone":
+            token = os.environ.get("TTS_INTERNAL_TOKEN")
+            if not token:
+                raise BusinessError("TTS_INVALID_CONFIG", "Worker 未配置内部克隆服务凭据", 503)
+            headers["Authorization"] = "Bearer " + token
         request = Request(self.config["base_url"].rstrip("/") + path,
                           data=json.dumps(payload, ensure_ascii=False).encode() if payload is not None else None,
-                          headers={"Content-Type": "application/json"} if payload is not None else {})
+                          headers=headers)
         try:
             with self.opener.open(request, timeout=self.config["timeout_seconds"]) as response:
                 maximum = MAX_WAV_BYTES if audio else 1024 * 1024
@@ -137,8 +144,17 @@ class LocalTTSAudioGenerator:
             if type(service_limit) is not int or not 1 <= service_limit <= 1000:
                 raise ValueError("invalid text limit")
             limit = min(self.config["chunk_chars"], service_limit)
-            voices = self._request("/v1/voices?" + urlencode({"engine_id": self.config["engine_id"]}))
-            available = set(voices["voices"]) | set(voices.get("aliases", {}))
+            cloning = self.config["engine_id"] == "qwen3-base"
+            references = snapshot.get("clone_references", {})
+            if cloning:
+                if not engine.get("supports_cloning") or not references:
+                    raise BusinessError("TTS_INVALID_VOICE_CONFIG", "缺少克隆声音快照", 422)
+                if any(r.get("model_revision") != engine.get("model_revision") for r in references.values()):
+                    raise BusinessError("TTS_MODEL_CHANGED", "模型部署已变化，请重新提交任务", 409)
+                available = set(references)
+            else:
+                voices = self._request("/v1/voices?" + urlencode({"engine_id": self.config["engine_id"]}))
+                available = set(voices["voices"]) | set(voices.get("aliases", {}))
             roles = {role["role_id"]: role for role in snapshot["script"]["roles"]}
             sentences = sorted(snapshot["script"]["sentences"], key=lambda s: s["sequence"])
             if not sentences or len({s["sequence"] for s in sentences}) != len(sentences):
@@ -178,8 +194,13 @@ class LocalTTSAudioGenerator:
             if previous_role is not None and previous_role != sentence["role_id"]:
                 pcm.extend(b"\0\0" * (self.config["sample_rate"] * self.config["turn_silence_ms"] // 1000))
             for text in chunks:
-                wav = self._request("/v1/synthesize", {"text": text, "engine_id": self.config["engine_id"],
-                                                     "voice_id": voice_id, "speed": speed, "output_type": "wav"}, audio=True)
+                if cloning:
+                    reference = {k: v for k, v in references[voice_id].items() if k != "voice_version_id"}
+                    wav = self._request("/v1/clone", {"text": text, "engine_id": self.config["engine_id"],
+                                                     "voice_id": voice_id, **reference}, audio=True)
+                else:
+                    wav = self._request("/v1/synthesize", {"text": text, "engine_id": self.config["engine_id"],
+                                                         "voice_id": voice_id, "speed": speed, "output_type": "wav"}, audio=True)
                 pcm.extend(self._pcm(wav))
                 chunks_generated += 1
             previous_role = sentence["role_id"]
@@ -200,6 +221,8 @@ class LocalTTSAudioGenerator:
             "script_simulated": snapshot.get("script_simulated", True),
             "sentence_count": len(sentences), "chunk_count": chunks_generated,
             "turn_silence_ms": self.config["turn_silence_ms"],
+            "voice_versions": [r["voice_version_id"] for r in references.values()],
+            "model_revision": engine.get("model_revision"),
         })
 
 

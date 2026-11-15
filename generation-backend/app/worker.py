@@ -58,6 +58,7 @@ class Worker:
             repository.fail(self.database, job["id"], job["token"], "WORKER_INTERRUPTED", "Worker 已停止，请重新提交当前阶段")
             raise
         except BusinessError as exc:
+            logger.warning("Task failed: id=%s code=%s message=%s", job["id"], exc.code, exc.message)
             repository.fail(self.database, job["id"], job["token"], exc.code, exc.message)
         except Exception as exc:
             logger.error("Task failed: id=%s exception_type=%s", job["id"], type(exc).__name__)

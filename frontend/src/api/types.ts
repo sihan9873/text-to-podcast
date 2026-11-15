@@ -23,7 +23,7 @@ export interface PaginationParams {
 /** 异步任务受理返回 */
 export interface TaskAccepted {
   task_id: string;
-  task_type: 'script' | 'audio';
+  task_type: 'script' | 'audio' | 'voice_preview';
   audio_action: 'preview' | 'full' | 'regenerate' | null;
   status: 'queued' | 'running' | 'succeeded' | 'failed';
   script_id: string | null;
@@ -67,7 +67,7 @@ export interface LoginRequest {
 
 export interface SessionResponse {
   user: UserInfo;
-  expires_at: string;
+  expires_at: string | null;
   csrf_token: string;
 }
 
@@ -372,6 +372,7 @@ export interface AudioVersionListItem {
 }
 
 export interface AudioVersionDetail extends AudioVersionListItem {
+  supports_sentence_audio?: boolean;
   project_id: string;
   script_snapshot: Record<string, unknown>;
   config_snapshot: Record<string, unknown>;
@@ -460,8 +461,8 @@ export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
 export interface TaskDetail {
   task_id: string;
-  project_id: string;
-  task_type: 'script' | 'audio';
+  project_id: string | null;
+  task_type: 'script' | 'audio' | 'voice_preview';
   audio_action: AudioAction | null;
   script_id: string | null;
   audio_version_id: string | null;

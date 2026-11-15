@@ -6,7 +6,7 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from llm_service.app import GenerateRequest, MODEL_ID, QwenGenerator, Role, ServiceError, parse_script
+from llm_service.app import GenerateRequest, MODEL_ID, QwenGenerator, Role, ServiceError, generation_messages, parse_script
 
 
 class ServiceTests(unittest.TestCase):
@@ -44,6 +44,24 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(caught.exception.code, "engine_busy")
         finally:
             engine.lock.release()
+
+    def test_prompt_separates_role_metadata_from_sentence_schema(self):
+        request = GenerateRequest(model_id=MODEL_ID, source_text="Transformer 使用多头注意力。",
+            roles=[{"role_key": "role_1", "name": "主持人", "description": "本地语音"}], system_prompt="根据素材创作")
+        messages = generation_messages(request)
+        self.assertEqual([m["role"] for m in messages], ["system", "user"])
+        self.assertIn('role_1', messages[-1]["content"])
+        self.assertIn(request.source_text, messages[-1]["content"])
+        self.assertNotIn('"name":', messages[-1]["content"])
+        self.assertNotIn("活动免费", "".join(m["content"] for m in messages))
+
+    def test_role_metadata_is_not_accepted_as_spoken_text(self):
+        raw = json.dumps({"title": "标题", "summary": "摘要", "sentences": [
+            {"role_key": "role_1", "name": "主持人", "description": "本地语音"}]})
+        with self.assertRaises(ServiceError) as caught:
+            parse_script(raw, [Role(role_key="role_1", name="主持人")])
+        self.assertEqual(caught.exception.code, "invalid_response")
+        self.assertIn("text", caught.exception.message)
 
     def test_invalid_request(self):
         for source in (" ", "a" * 5001):

@@ -1,5 +1,7 @@
 # 本地 Qwen LLM 服务
 
+> 集成仓库现用 LLM 8003、TTS 8002、生成 API 8001、账号 8000。下文原独立部署端口及 `local_services.py` 等命令为历史说明，统一启动和按钮测试请使用 [本地测试控制台](../docs/local-console.md)。
+
 独立进程，HTTP 8002，按需加载本地 Qwen2.5-0.5B-Instruct。
 业务适配器在 `backend/app/integrations/local_llm.py`，实现 `ScriptGenerator`。
 

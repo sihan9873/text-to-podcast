@@ -17,8 +17,12 @@ router = APIRouter(prefix="/api/v1")
 
 @router.get("/roles", tags=["配置模块"], summary="固定测试角色", response_model=dict)
 def roles(request: Request, session: SessionDep, user: UserDep,
-          page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100)):
-    conditions = [RoleProfile.user_id == user, RoleProfile.status == "enabled"]
+          page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100), status: str | None = None):
+    conditions = [RoleProfile.user_id == user]
+    if status:
+        if status not in ("enabled", "disabled"):
+            raise BusinessError("INVALID_INPUT", "角色状态无效", 422)
+        conditions.append(RoleProfile.status == status)
     values = session.scalars(select(RoleProfile).where(*conditions).order_by(RoleProfile.created_at, RoleProfile.id)
                              .offset((page - 1) * page_size).limit(page_size)).all()
     total = session.scalar(select(func.count()).select_from(RoleProfile).where(*conditions))
@@ -29,7 +33,7 @@ def roles(request: Request, session: SessionDep, user: UserDep,
 
 def file_response(asset_id, request, session, user, download):
     asset = session.get(Asset, asset_id)
-    if asset is None or asset.user_id != user or asset.status != "ready" or asset.kind != "full_audio":
+    if asset is None or asset.user_id != user or asset.status != "ready" or asset.kind not in ("full_audio", "voice_preview"):
         raise BusinessError("RESOURCE_NOT_FOUND", "音频不存在", 404)
     path = request.app.state.storage.readable(asset.object_key)
     if path.stat().st_size != asset.size_bytes:

@@ -3,10 +3,12 @@
 from dataclasses import asdict
 import io
 import logging
+import hmac
+import os
 from typing import Annotated, Mapping
 import wave
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -35,6 +37,18 @@ class SynthesisRequest(BaseModel):
         if not value.strip():
             raise ValueError("文本不能为空白。")
         return value  # 保留原文本和标点
+
+
+class CloneRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    text: str = Field(min_length=1, max_length=1000)
+    engine_id: str = "qwen3-base"
+    voice_id: str = Field(pattern=r"^clone_[1-9][0-9]*$")
+    reference_key: str = Field(pattern=r"^[a-f0-9]{64}\.wav$")
+    reference_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    reference_text: str = Field(min_length=1, max_length=2000)
+    language: str = Field(pattern=r"^(Chinese|English)$", default="Chinese")
+    model_revision: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 def error_response(status: int, code: str, message: str, **extra) -> JSONResponse:
@@ -146,6 +160,19 @@ def create_app(
         except Exception as exc:
             raise EngineError("synthesis_failed", "引擎推理失败。", 500) from exc
         validate_audio(result, voice_id)
+        return Response(result.wav_bytes, media_type="audio/wav")
+
+    @app.post("/v1/clone", response_class=Response)
+    def clone(body: CloneRequest, request: Request):
+        token = os.environ.get("TTS_INTERNAL_TOKEN", "")
+        if not token or not hmac.compare_digest(request.headers.get("Authorization", ""), "Bearer " + token):
+            raise EngineError("unauthorized", "克隆接口需要内部服务凭据。", 401)
+        engine = get_engine(body.engine_id)
+        if not engine.info().supports_cloning or not hasattr(engine, "clone"):
+            raise EngineError("unsupported_feature", "该引擎不支持语音克隆。", 422)
+        result = engine.clone(body.text, body.voice_id, body.reference_key, body.reference_sha256,
+                              body.reference_text, body.language, body.model_revision)
+        validate_audio(result, body.voice_id)
         return Response(result.wav_bytes, media_type="audio/wav")
 
     return app

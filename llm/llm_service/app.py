@@ -81,8 +81,25 @@ def parse_script(text, roles, require_all_roles=True):
                 or sum(len(s.text) for s in script.sentences) > 5000):
             raise ValueError("invalid roles or text")
         return script.model_dump()
-    except (ValidationError, ValueError) as exc:
+    except ValidationError as exc:
+        errors = exc.errors(include_input=False, include_url=False)
+        logger.warning("LLM script validation failed: %s", errors)
+        missing_text = any(item["type"] == "missing" and item["loc"][-1] == "text" for item in errors)
+        message = "模型输出的台词缺少 text 正文字段，请重新生成。" if missing_text else "模型输出的 JSON 字段不符合脚本格式，请重新生成。"
+        raise ServiceError("invalid_response", message, 502) from exc
+    except ValueError as exc:
+        logger.warning("LLM script roles or content validation failed")
         raise ServiceError("invalid_response", "模型输出不符合脚本格式、角色或长度约束，请调整描述后重新提交。", 502) from exc
+
+
+def generation_messages(request):
+    # Small instruction models otherwise copy role metadata into sentences.
+    # Use the actual role keys in the schema, without adding example story facts.
+    role_notes = [f"{r.role_key}：{r.description or '播客角色'}" for r in request.roles]
+    return [
+        {"role": "system", "content": request.system_prompt.replace('"role_key":"角色标识"', '"role_key":' + json.dumps(request.roles[0].role_key)) + "\n每条 sentences 只能包含 role_key 和 text，text 必须是真正可朗读的台词。不要把角色的 name、description 放进 sentences。标题与摘要必须针对本次素材创作，不得照抄格式说明。"},
+        {"role": "user", "content": "角色分工（冒号前是唯一可用的 role_key）：\n" + "\n".join(role_notes) + "\n\n本次素材：\n" + request.source_text + "\n\n根据上述素材编写播客台词，只输出完整 JSON。role_key 必须从以下值选择：" + ", ".join(r.role_key for r in request.roles)},
+    ]
 
 
 class QwenGenerator:
@@ -125,10 +142,7 @@ class QwenGenerator:
             if loading:
                 self._load()
             import torch
-            user = json.dumps({"创作要求或素材": request.source_text,
-                               "角色": [r.model_dump() for r in request.roles]}, ensure_ascii=False)
-            text = self.tokenizer.apply_chat_template([
-                {"role": "system", "content": request.system_prompt}, {"role": "user", "content": user}],
+            text = self.tokenizer.apply_chat_template(generation_messages(request),
                 tokenize=False, add_generation_prompt=True)
             inputs = self.tokenizer(text, return_tensors="pt").to(self.device)
             if inputs.input_ids.shape[1] + request.max_new_tokens > 12000:

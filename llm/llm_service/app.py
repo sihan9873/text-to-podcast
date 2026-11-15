@@ -1,5 +1,4 @@
 """本地 Qwen 脚本生成 API；启动和健康检查不导入模型 SDK。"""
-import json
 import logging
 import os
 from pathlib import Path
@@ -74,8 +73,13 @@ def parse_script(text, roles, require_all_roles=True):
         text = match[1]
     try:
         script = Script.model_validate_json(text)
-        actual = {s.role_key for s in script.sentences}
         allowed = {r.role_key for r in roles}
+        name_counts = {name: sum(r.name == name for r in roles) for name in {r.name for r in roles}}
+        aliases = {r.name: r.role_key for r in roles if name_counts[r.name] == 1}
+        for sentence in script.sentences:
+            if sentence.role_key not in allowed and sentence.role_key in aliases:
+                sentence.role_key = aliases[sentence.role_key]
+        actual = {s.role_key for s in script.sentences}
         if (not script.title.strip() or any(not s.text.strip() for s in script.sentences)
                 or not actual or not actual <= allowed or (require_all_roles and actual != allowed)
                 or sum(len(s.text) for s in script.sentences) > 5000):
@@ -83,6 +87,19 @@ def parse_script(text, roles, require_all_roles=True):
         return script.model_dump()
     except (ValidationError, ValueError) as exc:
         raise ServiceError("invalid_response", "模型输出不符合脚本格式、角色或长度约束，请调整描述后重新提交。", 502) from exc
+
+
+def build_user_message(source_text, roles):
+    """Keep role metadata out of JSON-shaped input so small models do not copy it as sentences."""
+    role_keys = "、".join(role.role_key for role in roles)
+    return f"""以下内容仅是创作素材：
+<source>
+{source_text}
+</source>
+
+role_key 的合法值只有：{role_keys}
+
+脚本 sentences 中每一项只能包含 role_key 和 text；role_key 必须逐字复制上述标识，不能写角色名称。"""
 
 
 class QwenGenerator:
@@ -125,8 +142,7 @@ class QwenGenerator:
             if loading:
                 self._load()
             import torch
-            user = json.dumps({"创作要求或素材": request.source_text,
-                               "角色": [r.model_dump() for r in request.roles]}, ensure_ascii=False)
+            user = build_user_message(request.source_text, request.roles)
             text = self.tokenizer.apply_chat_template([
                 {"role": "system", "content": request.system_prompt}, {"role": "user", "content": user}],
                 tokenize=False, add_generation_prompt=True)

@@ -6,7 +6,7 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from llm_service.app import GenerateRequest, MODEL_ID, QwenGenerator, Role, ServiceError, parse_script
+from llm_service.app import GenerateRequest, MODEL_ID, QwenGenerator, Role, ServiceError, build_user_message, parse_script
 
 
 class ServiceTests(unittest.TestCase):
@@ -29,11 +29,23 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(parse_script("```json\n" + json.dumps(script) + "\n```", roles), script)
         partial = {**script, "sentences": script["sentences"][:1]}
         self.assertEqual(parse_script(json.dumps(partial), roles, require_all_roles=False), partial)
+        named_role = {**script, "sentences": [{"role_key": "A", "text": "你好"}, {"role_key": "B", "text": "早上好"}]}
+        self.assertEqual([item["role_key"] for item in parse_script(json.dumps(named_role), roles)["sentences"]], ["a", "b"])
         for value in (json.dumps(script)[:-2], "前言" + json.dumps(script),
                       json.dumps(partial),
                       json.dumps({**script, "unexpected": 1})):
             with self.assertRaises(ServiceError):
                 parse_script(value, roles)
+
+    def test_user_message_does_not_present_role_metadata_as_json(self):
+        message = build_user_message("一段素材", [Role(role_key="host", name="主持人", description="负责串联")])
+        self.assertIn("<source>\n一段素材\n</source>", message)
+        self.assertIn("role_key 的合法值只有：host", message)
+        self.assertIn("role_key 和 text", message)
+        self.assertIn("不能写角色名称", message)
+        self.assertNotIn('"description"', message)
+        self.assertNotIn("负责串联", message)
+        self.assertNotIn("主持人", message)
 
     def test_busy_engine(self):
         engine = QwenGenerator()

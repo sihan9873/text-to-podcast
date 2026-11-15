@@ -1,6 +1,13 @@
+from io import BytesIO
+from urllib.error import HTTPError
+
+import pytest
+
+from app.core.common import BusinessError
 from app.integrations.contracts import GeneratedScript
 from app.integrations.local_llm import (
     CoherentLongDocumentScriptGenerator,
+    LocalLLMClient,
     LocalLLMScriptGenerator,
     script_generator_for_snapshot,
 )
@@ -82,3 +89,31 @@ def test_long_document_uses_global_memory_rolling_context_and_final_refinement()
 def test_factory_keeps_short_text_on_single_request_path():
     assert isinstance(script_generator_for_snapshot(snapshot("短文")), LocalLLMScriptGenerator)
     assert isinstance(script_generator_for_snapshot(snapshot("长" * 5001)), CoherentLongDocumentScriptGenerator)
+
+
+def test_short_text_uses_compact_prompt_and_bounded_token_budget():
+    client = FakeClient()
+    value = snapshot("短文")
+    value["generation_preferences"]["target_characters"] = 240
+
+    LocalLLMScriptGenerator(CONFIG, client=client).generate(value)
+
+    call = client.calls[0]
+    assert "只输出一个 JSON 对象" in call["prompt"]
+    assert "克制、准确" in call["prompt"]
+    assert call["max_new_tokens"] == 480
+    assert call["require_all_roles"] is True
+
+
+def test_local_service_error_is_translated_to_actionable_message():
+    class InvalidResponseOpener:
+        def open(self, _request, timeout):
+            raise HTTPError("http://local/v1/scripts/generate", 502, "Bad Gateway", {},
+                            BytesIO(b'{"error":{"code":"invalid_response"}}'))
+
+    client = LocalLLMClient(CONFIG, opener=InvalidResponseOpener())
+    with pytest.raises(BusinessError) as caught:
+        client.generate("素材", "提示", [{"role_key": "host", "name": "主持人"}])
+
+    assert caught.value.code == "LLM_INVALID_RESPONSE"
+    assert caught.value.message == "本地模型输出的脚本格式无效，请重试或缩短目标时长"

@@ -422,6 +422,16 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
 
   const scripts = scriptsData?.items ?? []
 
+  const { data: scriptTasksData } = useQuery({
+    queryKey: ["script-tasks", projectId],
+    queryFn: () => tasksApi.listByProject(projectId, {
+      page: 1,
+      page_size: 5,
+      task_type: "script",
+    }),
+  })
+  const latestScriptTask = scriptTasksData?.items[0]
+
   const { latestByScript, loading: audioLoading } = useLatestAudioByScript(
     projectId,
     scripts,
@@ -431,7 +441,20 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
 
   // 是否有进行中的脚本生成任务（来自 P-03 active_tasks）
   const activeScriptTask = pickScriptTask(project?.active_tasks)
-  const isGenerating = !!activeScriptTask
+  const recoveredScriptTask = latestScriptTask && ["queued", "running"].includes(latestScriptTask.status)
+    ? latestScriptTask
+    : undefined
+  const visibleScriptTask: ActiveTaskSummary | undefined = activeScriptTask ?? (recoveredScriptTask ? {
+    task_id: recoveredScriptTask.task_id,
+    task_type: "script",
+    audio_action: null,
+    stage: recoveredScriptTask.stage,
+    status_url: `/api/v1/tasks/${recoveredScriptTask.task_id}`,
+  } : undefined)
+  const isGenerating = !!visibleScriptTask
+  const failedScriptTask = !isGenerating && latestScriptTask?.status === "failed"
+    ? latestScriptTask
+    : undefined
 
   // 轮询：当有 script 任务时启动
   const handleSettled = React.useCallback(
@@ -445,6 +468,7 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
       // 不论成败都刷新项目详情与脚本列表
       queryClient.invalidateQueries({ queryKey: ["project", projectId] })
       queryClient.invalidateQueries({ queryKey: ["scripts", projectId] })
+      queryClient.invalidateQueries({ queryKey: ["script-tasks", projectId] })
     },
     [projectId, queryClient],
   )
@@ -454,6 +478,7 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
   // ---------- 生成成功后的回调：重新拉项目详情以恢复占位 ----------
   const handleGenerateSubmitted = React.useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["project", projectId] })
+    queryClient.invalidateQueries({ queryKey: ["script-tasks", projectId] })
   }, [projectId, queryClient])
 
   // ---------- 渲染 ----------
@@ -558,7 +583,7 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
 
           {!hasSource ? (
             <Placeholder text="请先提交原文" hint="原文提交后即可生成脚本版本" />
-          ) : !hasVersions && !isGenerating ? (
+          ) : !hasVersions && !isGenerating && !failedScriptTask ? (
             <Placeholder text="还没有脚本版本" hint="点击“生成脚本”选择角色后创建第一个版本" />
           ) : (
             <div className="mt-4 overflow-hidden rounded-lg border border-border">
@@ -576,12 +601,12 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
                 </thead>
                 <tbody>
                   {/* 生成中占位行（位于顶部） */}
-                  {isGenerating && activeScriptTask && (
+                  {isGenerating && visibleScriptTask && (
                     <tr className="border-t border-border bg-primary/5">
                       <td className="px-4 py-3 font-medium">
                         <span className="inline-flex items-center gap-1">
                           <Loader2 className="size-3 animate-spin text-primary" />
-                          V?
+                          待生成
                         </span>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
@@ -591,21 +616,47 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">—</td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        {formatStage(activeScriptTask.stage)}
+                        {formatStage(visibleScriptTask.stage)}
                       </td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/15 px-2 py-0.5 text-[11px] font-medium text-blue-500">
                           <Loader2 className="size-3 animate-spin" />
-                          {formatStage(activeScriptTask.stage)}
+                          {formatStage(visibleScriptTask.stage)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">—</td>
-                      <td className="px-4 py-3 text-right text-muted-foreground">
-                        <button
-                          onClick={() => onNavigate(activeScriptTask.status_url)}
-                          className="text-xs text-primary hover:underline"
-                        >
-                          查看任务
+                      <td className="px-4 py-3 text-right text-xs text-muted-foreground">
+                        {latestScriptTask?.task_id === visibleScriptTask.task_id
+                          ? `${latestScriptTask.progress ?? 0}%`
+                          : "处理中"}
+                      </td>
+                    </tr>
+                  )}
+
+                  {failedScriptTask && (
+                    <tr className="border-t border-border bg-destructive/5">
+                      <td className="px-4 py-3 font-medium text-muted-foreground" title="失败任务不会占用脚本版本号">
+                        未生成
+                      </td>
+                      <td className="max-w-xs px-4 py-3">
+                        <p className="font-medium text-destructive">生成失败</p>
+                        <p className="mt-1 truncate text-xs text-muted-foreground" title={failedScriptTask.error_message ?? undefined}>
+                          {failedScriptTask.error_message ?? "模型未能返回有效脚本，请调整设置后重试"}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">—</td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {new Date(failedScriptTask.updated_at).toLocaleString("zh-CN")}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-medium text-destructive">
+                          <AlertCircle className="size-3" />失败
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">—</td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => setShowGenerate(true)} className="text-xs text-primary hover:underline">
+                          调整并重试
                         </button>
                       </td>
                     </tr>
@@ -674,7 +725,7 @@ export default function ProjectPage({ projectId, onNavigate }: ProjectPageProps)
                     <Loader2 className="mr-1 size-3 animate-spin" />
                     生成中…
                   </>
-                  ) : hasVersions ? (
+                  ) : hasVersions || failedScriptTask ? (
                     "重新生成脚本"
                   ) : (
                     "生成脚本"

@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+import io
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,10 +9,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from app.bootstrap import initialize
+from app.api import dependencies
 from app.core.common import BusinessError, utcnow
 from app.core.config import Settings
-from app.db.database import transaction
-from app.db.models import Asset, Project, Script, SourceChunk, Task, User
+from app.db.database import Database, transaction
+from app.db.models import Asset, LLMModel, Project, RoleProfile, Script, SourceChunk, Task, User
 from app.db.seed import ROLE_ID
 from app.integrations import mock
 from app.integrations.contracts import GeneratedScript
@@ -41,6 +43,59 @@ def create_project(e, text=True):
     return pid
 
 
+def test_bootstrap_aligns_fixed_models_and_roles_with_real_providers(tmp_path):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'real.sqlite3').as_posix()}",
+        storage_dir=tmp_path / "assets",
+        llm_provider="local_http",
+        audio_provider="local_http",
+        tts_engine_id="qwen3-customvoice",
+    )
+    initialize(settings)
+    database = Database(settings.database_url)
+    try:
+        with database.sessions() as session:
+            model = session.get(LLMModel, 1)
+            roles = [session.get(RoleProfile, role_id) for role_id in (2, 3)]
+            assert model.provider_code == "local_http"
+            assert model.model_code == settings.llm_model_id
+            assert model.params["simulated"] is False
+            assert all(role.voice_config["tts_model"] == "qwen3-customvoice" for role in roles)
+    finally:
+        database.engine.dispose()
+
+
+def test_authenticated_user_receives_real_tts_role(tmp_path, monkeypatch):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'auth.sqlite3').as_posix()}",
+        storage_dir=tmp_path / "assets",
+        llm_provider="local_http",
+        audio_provider="local_http",
+        tts_engine_id="qwen3-customvoice",
+    )
+    initialize(settings)
+    app = create_app(settings)
+    monkeypatch.setenv("TEXTCAST_AUTH_URL", "http://auth.test")
+    monkeypatch.setattr(
+        dependencies,
+        "urlopen",
+        lambda *_args, **_kwargs: io.BytesIO(b'{"user":{"id":"external-user"}}'),
+    )
+    request = SimpleNamespace(
+        headers={"cookie": "textcast_session=test"},
+        app=SimpleNamespace(state=app.state),
+    )
+    user_id = dependencies.current_user(request)
+    try:
+        with app.state.database.sessions() as session:
+            roles = session.scalars(select(RoleProfile).where(RoleProfile.user_id == user_id)).all()
+            assert len(roles) == 1
+            assert roles[0].voice_config["tts_provider"] == "local_http"
+            assert roles[0].voice_config["tts_model"] == "qwen3-customvoice"
+    finally:
+        app.state.database.engine.dispose()
+
+
 def submit_script(e, pid, key="script-1", role_key="host"):
     return e.client.post(f"/api/v1/projects/{pid}/script/generate", headers={"Idempotency-Key": key},
         json={"roles": [{"profile_id": ROLE_ID, "role_key": role_key}]})
@@ -67,12 +122,24 @@ def submit_audio(e, pid, sid, key="audio-1"):
 
 def test_complete_flow_download_and_range(env):
     e = env
-    assert e.client.get("/api/v1/health/ready").status_code == 200
+    ready = e.client.get("/api/v1/health/ready")
+    assert ready.status_code == 200
+    assert ready.json() == {
+        "status": "ready",
+        "provider": "mock",
+        "llm_provider": "mock",
+        "audio_provider": "mock",
+        "authentication": "fixed_development_user",
+    }
     pid = create_project(e)
     sid = generate_script(e, pid)
     detail = e.client.get(f"/api/v1/scripts/{sid}").json()["data"]
     assert [x["sequence"] for x in detail["sentences"]] == [1, 2, 3]
     assert "模拟" in detail["title"]
+    versions = e.client.get(f"/api/v1/projects/{pid}/scripts").json()["data"]
+    assert versions["total"] == 1
+    assert versions["items"][0]["script_id"] == sid
+    assert versions["items"][0]["sentence_count"] == 3
     assert submit_audio(e, pid, sid).json()["code"] == "SCRIPT_NOT_CONFIRMED"
     e.client.post(f"/api/v1/scripts/{sid}/confirm", json={"expected_script_version": 1, "expected_edit_revision": 1})
     submitted = submit_audio(e, pid, sid)
@@ -217,6 +284,10 @@ def test_provider_failure_does_not_publish_script(env):
     with env.db.sessions() as session:
         assert session.scalar(select(func.count()).select_from(Script)) == 0
         assert session.get(Project, pid).active_task_id is None
+    history = env.client.get(f"/api/v1/projects/{pid}/tasks", params={"task_type": "script"})
+    assert history.status_code == 200
+    assert history.json()["data"]["items"][0]["status"] == "failed"
+    assert history.json()["data"]["items"][0]["task_id"] == task["task_id"]
     assert submit_script(env, pid, key="retry-new-key").status_code == 202
 
 

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from app.core.common import BusinessError
 from app.db.models import User, RoleProfile
-from app.db.seed import ROLE_ID
+from app.db.seed import LOCAL_TTS_ROLES, ROLE_ID
 
 from fastapi import Depends, Header, Request
 from sqlalchemy.orm import Session
@@ -42,20 +42,34 @@ def current_user(request: Request):
     with request.app.state.database.sessions() as session:
         lookup = select(User).where(User.username == account_key)
         user = session.scalar(lookup)
+        settings = request.app.state.settings
+        template_id = LOCAL_TTS_ROLES[0][0] if settings.audio_provider == "local_http" else ROLE_ID
         if user is None:
             try:
                 user = User(username=account_key)
                 session.add(user)
                 session.flush()
-                template = session.get(RoleProfile, ROLE_ID)
+                template = session.get(RoleProfile, template_id)
                 session.add(RoleProfile(user_id=user.id, name="主持人",
-                    description="", voice_config=template.voice_config))
+                    description=template.description, voice_config=template.voice_config))
                 session.commit()
             except IntegrityError:
                 session.rollback()
                 user = session.scalar(lookup)
                 if user is None:
                     raise
+        if settings.audio_provider == "local_http":
+            profiles = session.scalars(select(RoleProfile).where(RoleProfile.user_id == user.id)).all()
+            has_current_engine = any(
+                profile.voice_config.get("tts_provider") == "local_http"
+                and profile.voice_config.get("tts_model") == settings.tts_engine_id
+                for profile in profiles
+            )
+            if not has_current_engine:
+                template = session.get(RoleProfile, template_id)
+                session.add(RoleProfile(user_id=user.id, name="本地 TTS 主持人 A",
+                    description=template.description, voice_config=template.voice_config))
+                session.commit()
         return user.id
 
 

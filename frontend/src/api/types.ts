@@ -67,8 +67,8 @@ export interface LoginRequest {
 
 export interface SessionResponse {
   user: UserInfo;
-  expires_at: string;
-  csrf_token: string;
+  expires_at: string | null;
+  csrf_token: string | null;
 }
 
 export interface LogoutResponse {

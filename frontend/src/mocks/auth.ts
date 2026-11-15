@@ -15,7 +15,8 @@ export async function mockAuth(action: string, method: string, body: Record<stri
   if (action === 'me' && method === 'GET') return currentUser ? response({ user: currentUser, expires_at: new Date(Date.now() + 86400000).toISOString(), csrf_token: 'mock-csrf-token' }) : unauthenticated();
   if (action === 'logout' && method === 'POST') { currentUser = null; save(); return response({ logged_out: true }); }
   if (!['register', 'login'].includes(action) || method !== 'POST') return failure(404, 'NOT_FOUND', '认证接口不存在');
-  const { username, password, display_name } = body;
+  const { username, password } = body;
+  const display_name = body.display_name ?? body.displayName;
   if (typeof username !== 'string' || !/^[A-Za-z0-9_]{3,64}$/.test(username) || typeof password !== 'string' || password.length < 8 || password.length > 128 || (display_name != null && (typeof display_name !== 'string' || display_name.length > 100))) return failure(422, 'INVALID_INPUT', '请检查用户名、密码和昵称格式');
   const existing = accounts.find(a => a.user.username === username);
   const passwordHash = await hash(password);

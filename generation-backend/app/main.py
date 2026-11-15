@@ -1,6 +1,7 @@
 """FastAPI API进程；后台任务单独运行 python -m app.worker。"""
 from contextlib import asynccontextmanager
 import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -87,7 +88,14 @@ def create_app(settings=None):
             user = session.scalar(select(User).where(User.id == settings.development_user_id))
             if user is None:
                 raise BusinessError("NOT_INITIALIZED", "请先执行 python -m app.bootstrap", 503)
-        return {"status": "ready", "provider": "mock", "authentication": "fixed_development_user"}
+        provider = (settings.llm_provider if settings.llm_provider == settings.audio_provider else "mixed")
+        return {
+            "status": "ready",
+            "provider": provider,
+            "llm_provider": settings.llm_provider,
+            "audio_provider": settings.audio_provider,
+            "authentication": "account_service" if os.environ.get("TEXTCAST_AUTH_URL") else "fixed_development_user",
+        }
 
     app.include_router(projects.router)
     app.include_router(generation.router)

@@ -23,6 +23,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  UserRound,
   type LucideIcon,
 } from "lucide-react"
 import RolesPage from '@/app/Role'
@@ -38,6 +39,7 @@ import ProjectPage from "@/app/Project"
 import ScriptPage from "@/app/Script"
 import AudioPage from "@/app/Audio"
 import AuthPage from "@/app/Auth"
+import ProfilePage from "@/app/Profile"
 
 import {
   ApiError,
@@ -94,25 +96,6 @@ function useCreateProject() {
 }
 
 // ============================================================
-// 登出
-// ============================================================
-
-function useLogout() {
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  return React.useCallback(async () => {
-    try {
-      await authApi.logout()
-    } catch {
-      /* 即使失败也清空本地状态 */
-    } finally {
-      queryClient.clear()
-      navigate("/login", { replace: true })
-    }
-  }, [navigate, queryClient])
-}
-
-// ============================================================
 // Auth guards
 // ============================================================
 
@@ -157,6 +140,7 @@ function RequireGuest({ children }: { children: React.ReactNode }) {
 
 // Build links only for pages that exist in the route hierarchy.
 function breadcrumbsOf(pathname: string, projects: ProjectListItem[] = []) {
+  if (pathname.startsWith("/profile")) return [{ label: "个人中心", href: "/profile" }]
   if (pathname.startsWith("/roles")) return [{ label: "角色模板", href: "/roles" }]
 
   const crumbs = [{ label: "项目", href: "/projects" }]
@@ -184,7 +168,6 @@ function AppLayout() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const { data: session } = useSession()
-  const logout = useLogout()
   const { create: createProject, pending: creating } = useCreateProject()
 
   const [mobileOpen, setMobileOpen] = React.useState(false)
@@ -229,6 +212,10 @@ function AppLayout() {
       {
         title: '配置',
         items: [{ label: '角色模板', href: '/roles', icon: Mic2 }],
+      },
+      {
+        title: '账户',
+        items: [{ label: '个人中心', href: '/profile', icon: UserRound }],
       },
       {
         title: "项目",
@@ -293,8 +280,7 @@ function AppLayout() {
           breadcrumbs={breadcrumbsOf(pathname, projectList?.items)}
           onMenuClick={() => setMobileOpen(true)}
           user={{ name: displayName }}
-          // 简单下拉：先直接给"退出登录"入口
-          onUserClick={logout}
+          onUserClick={() => navigate("/profile")}
         />
 
         <main className="min-h-0 min-w-0 overflow-y-auto overscroll-contain p-4 md:p-6 lg:p-8">
@@ -798,6 +784,7 @@ export default function App() {
         <Route index element={<Navigate to="/projects" replace />} />
         <Route path="projects" element={<ProjectsListRoute />} />
         <Route path="roles" element={<RolesPage />} />
+        <Route path="profile" element={<ProfilePage />} />
         <Route path="projects/:projectId" element={<ProjectRoute />} />
         <Route
           path="projects/:projectId/scripts/:scriptId"

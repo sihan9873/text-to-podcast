@@ -91,7 +91,7 @@ def legacy_database(settings):
 
 def test_upgrade_preserves_relations_snapshots_idempotency_and_download(tmp_path):
     settings = Settings(database_url=f'sqlite:///{(tmp_path / "legacy.sqlite3").as_posix()}',
-                        storage_dir=tmp_path / 'assets')
+                        storage_dir=tmp_path / 'assets', allow_development_user=True)
     old = legacy_database(settings)
     initialize(settings)
     backups = list((tmp_path / 'backups').glob('*.sqlite3'))
@@ -131,7 +131,7 @@ def test_upgrade_preserves_relations_snapshots_idempotency_and_download(tmp_path
 
 def test_sqlite_migration_failure_rolls_back_schema_and_data(tmp_path, monkeypatch):
     settings = Settings(database_url=f'sqlite:///{(tmp_path / "rollback.sqlite3").as_posix()}',
-                        storage_dir=tmp_path / 'assets')
+                        storage_dir=tmp_path / 'assets', allow_development_user=True)
     legacy_database(settings)
     from alembic.operations import Operations
     original = Operations.create_table

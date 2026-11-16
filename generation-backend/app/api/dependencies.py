@@ -1,6 +1,5 @@
 from typing import Annotated
 import json
-import os
 from urllib.error import HTTPError, URLError
 from urllib.request import Request as UpstreamRequest, urlopen
 
@@ -20,9 +19,15 @@ def get_session(request: Request):
 
 
 def current_user(request: Request):
-    auth_url = os.environ.get("TEXTCAST_AUTH_URL")
+    auth_url = request.app.state.settings.auth_url
     if not auth_url:
-        return request.app.state.settings.development_user_id
+        if request.app.state.settings.allow_development_user:
+            return request.app.state.settings.development_user_id
+        raise BusinessError(
+            "AUTH_NOT_CONFIGURED",
+            "认证服务未配置，请设置 TEXTCAST_AUTH_URL",
+            503,
+        )
 
     cookie = request.headers.get("cookie")
     if not cookie:

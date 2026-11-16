@@ -44,6 +44,8 @@ export interface UserInfo {
   display_name: string | null;
   status: UserStatus;
   created_at: string;
+  role?: 'admin' | 'user';
+  last_login_at?: string | null;
 }
 
 export interface RegisterRequest {
@@ -67,8 +69,8 @@ export interface LoginRequest {
 
 export interface SessionResponse {
   user: UserInfo;
-  expires_at: string;
-  csrf_token: string;
+  expires_at: string | null;
+  csrf_token: string | null;
 }
 
 export interface LogoutResponse {

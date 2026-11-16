@@ -84,10 +84,18 @@ def create_app(settings=None):
     def ready():
         with database.sessions() as session:
             session.execute(text("SELECT 1"))
-            user = session.scalar(select(User).where(User.id == settings.development_user_id))
-            if user is None:
-                raise BusinessError("NOT_INITIALIZED", "请先执行 python -m app.bootstrap", 503)
-        return {"status": "ready", "provider": "mock", "authentication": "fixed_development_user"}
+            if not settings.auth_url:
+                if not settings.allow_development_user:
+                    raise BusinessError(
+                        "AUTH_NOT_CONFIGURED",
+                        "认证服务未配置，请设置 TEXTCAST_AUTH_URL",
+                        503,
+                    )
+                user = session.scalar(select(User).where(User.id == settings.development_user_id))
+                if user is None:
+                    raise BusinessError("NOT_INITIALIZED", "请先执行 python -m app.bootstrap", 503)
+        authentication = "auth_service" if settings.auth_url else "fixed_development_user"
+        return {"status": "ready", "provider": settings.audio_provider, "authentication": authentication}
 
     app.include_router(projects.router)
     app.include_router(generation.router)

@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
 
 import pytest
@@ -174,6 +175,46 @@ def test_claim_only_once(env):
     with ThreadPoolExecutor(max_workers=2) as pool:
         jobs = list(pool.map(lambda _: repository.claim(env.db, env.settings), range(2)))
     assert sum(job is not None for job in jobs) == 1
+
+
+def test_audio_does_not_block_script_for_another_project(env):
+    first_project = create_project(env)
+    first_script = generate_script(env, first_project, confirm=True)
+    audio_response = submit_audio(env, first_project, first_script, key="blocking-audio")
+    assert audio_response.status_code == 202, audio_response.text
+    audio_task_id = audio_response.json()["data"]["task_id"]
+
+    second_project = create_project(env)
+    script_response = submit_script(env, second_project, key="parallel-script")
+    assert script_response.status_code == 202, script_response.text
+    script_task_id = script_response.json()["data"]["task_id"]
+
+    started = Event()
+    release = Event()
+
+    class BlockingAudio:
+        def generate(self, snapshot):
+            started.set()
+            assert release.wait(timeout=5), "test did not release blocked audio generation"
+            return mock.MockAudioGenerator(0).generate(snapshot)
+
+    audio_worker = Worker(env.db, env.settings, audio_generator=BlockingAudio(),
+                          task_types=("audio", "voice_preview"))
+    script_worker = Worker(env.db, env.settings, script_generator=mock.MockScriptGenerator(0),
+                           task_types=("script",))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        audio_future = pool.submit(audio_worker.run_once)
+        assert started.wait(timeout=2), "audio worker did not claim the queued audio task"
+        script_future = pool.submit(script_worker.run_once)
+        assert script_future.result(timeout=2)
+        script_task = env.client.get(f"/api/v1/tasks/{script_task_id}").json()["data"]
+        audio_task = env.client.get(f"/api/v1/tasks/{audio_task_id}").json()["data"]
+        assert script_task["status"] == "succeeded"
+        assert audio_task["status"] == "running"
+        release.set()
+        assert audio_future.result(timeout=2)
+
+    assert env.client.get(f"/api/v1/tasks/{audio_task_id}").json()["data"]["status"] == "succeeded"
 
 
 def test_no_source_and_invalid_role(env):

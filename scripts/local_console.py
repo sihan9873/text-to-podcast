@@ -37,6 +37,20 @@ TASKS = {
 }
 
 
+def service_definitions(mode):
+    definitions = [
+        ("account", "backend", ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"]),
+        ("generation", "generation-backend", ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8001"]),
+        ("worker-script", "generation-backend", ["-m", "app.worker", "--queue", "script"]),
+        ("worker-audio", "generation-backend", ["-m", "app.worker", "--queue", "audio"]),
+    ]
+    if mode != "mock":
+        definitions.append(("tts", "tts", ["-m", "uvicorn", "tts_service.configured:configured_app", "--factory", "--host", "127.0.0.1", "--port", "8002"]))
+    if mode in MODES[2:]:
+        definitions.append(("llm", "llm", ["-m", "uvicorn", "llm_service.app:app", "--host", "127.0.0.1", "--port", "8003"]))
+    return definitions
+
+
 def terminate(process):
     if process.poll() is not None:
         return
@@ -133,16 +147,7 @@ class Console:
                 if code:
                     raise RuntimeError("数据库初始化失败，请查看启动日志")
                 mode = config["mode"]
-                definitions = [
-                    ("account", "backend", ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"]),
-                    ("generation", "generation-backend", ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8001"]),
-                    ("worker", "generation-backend", ["-m", "app.worker"]),
-                ]
-                if mode != "mock":
-                    definitions.append(("tts", "tts", ["-m", "uvicorn", "tts_service.configured:configured_app", "--factory", "--host", "127.0.0.1", "--port", "8002"]))
-                if mode in MODES[2:]:
-                    definitions.append(("llm", "llm", ["-m", "uvicorn", "llm_service.app:app", "--host", "127.0.0.1", "--port", "8003"]))
-                for name, module, args in definitions:
+                for name, module, args in service_definitions(mode):
                     executable = tts_python(config["env"]) if name == "tts" and mode == "customvoice" else python_for("tts-real" if name == "tts" and mode in MODES[2:] else module)
                     self.service(name, [executable, *args], ROOT / module, env, folder)
                 self.service("frontend", [*pnpm(), "dev", "--host", "127.0.0.1", "--port", "5173", "--strictPort"], ROOT / "frontend", env, folder)

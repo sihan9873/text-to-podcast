@@ -226,9 +226,9 @@ def test_automatic_long_document_generation_keeps_cloned_voice_snapshot(env, mon
         return GeneratedScript(title="完整节目", summary="全文事实与章节关系", sentences=[
             {"role_key": r["role_key"], "text": "连贯的正文台词。"} for r in roles])
     original_progress = repository.progress
-    def progress(database, task_id, token, stage, percent):
+    def progress(database, task_id, token, stage, percent, completed_sentences=None):
         stages.append(stage)
-        return original_progress(database, task_id, token, stage, percent)
+        return original_progress(database, task_id, token, stage, percent, completed_sentences)
     monkeypatch.setattr(LocalLLMClient, "generate", generate)
     monkeypatch.setattr(repository, "progress", progress)
 

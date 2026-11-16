@@ -84,8 +84,8 @@ def save(script_id: PathId, body: SaveScript, request: Request, session: Session
         if (len(body.roles) != len(role_map) or {r.role_id for r in body.roles} != set(role_map)
             or len(body.sentences) != len(sentence_map) or {s.sentence_id for s in body.sentences} != set(sentence_map)
             or {s.sequence for s in body.sentences} != set(range(1, len(sentences)+1))
-            or sum(len(s.text) for s in body.sentences) > 5000 or not body.title.strip()):
-            raise BusinessError("INVALID_INPUT", "请保持角色、句子与顺序完整，台词总长不超过 5000 字", 422)
+            or sum(len(s.text) for s in body.sentences) > (100000 if script.llm_snapshot.get("generation_mode") == "verbatim" else 5000) or not body.title.strip()):
+            raise BusinessError("INVALID_INPUT", "请保持角色、句子与顺序完整，台词总长超过当前模式上限", 422)
         for role in body.roles:
             original = role_map[role.role_id]
             if role.role_key != original.role_key or not role.name.strip():
@@ -177,6 +177,7 @@ def audio_detail(audio_id: PathId, request: Request, session: SessionDep, user: 
 @router.get("/audio-versions/{audio_id}/sentences")
 def audio_sentences(audio_id: PathId, request: Request, session: SessionDep, user: UserDep):
     audio = owned_audio(session, user, audio_id)
+    task = session.scalar(select(Task).where(Task.audio_version_id == audio.id).order_by(Task.id.desc()).limit(1))
     return envelope(request, {"audio_version_id": audio.id, "version": audio.version, "selection_revision": audio.selection_revision,
-        "total_sentences": len(audio.script_snapshot["sentences"]), "completed_sentences": len(audio.script_snapshot["sentences"]) if audio.status == "ready" else 0,
+        "total_sentences": len(audio.script_snapshot["sentences"]), "completed_sentences": len(audio.script_snapshot["sentences"]) if audio.status == "ready" else task.completed_sentences if task else 0,
         "failed_sentences": 0, "sentences": [], "supports_sentence_audio": False})

@@ -1,0 +1,113 @@
+{
+  "checked_at": "2026-11-16T05:28:03.559683+00:00",
+  "model_size": "0.6b",
+  "text": "欢迎收听今天的科技播客，我们一起聊聊人工智能如何改变日常生活。",
+  "device": "NVIDIA GeForce RTX 5060 Ti",
+  "runs": [
+    {
+      "backend": "standard",
+      "samples": [
+        {
+          "voice": "vivian",
+          "elapsed_seconds": 17.317,
+          "audio_seconds": 7.92,
+          "rtf": 2.1864,
+          "audio_file": "tts/outputs/benchmark/0.6b-standard-vivian.wav"
+        },
+        {
+          "voice": "uncle_fu",
+          "elapsed_seconds": 18.744,
+          "audio_seconds": 8.56,
+          "rtf": 2.1897,
+          "audio_file": "tts/outputs/benchmark/0.6b-standard-uncle_fu.wav"
+        }
+      ],
+      "load_seconds": 7.469,
+      "warmup_seconds": 8.059,
+      "rtf": 2.1882
+    },
+    {
+      "backend": "faster",
+      "samples": [
+        {
+          "voice": "vivian",
+          "elapsed_seconds": 2.946,
+          "audio_seconds": 8.4,
+          "rtf": 0.3507,
+          "audio_file": "tts/outputs/benchmark/0.6b-faster-vivian.wav"
+        },
+        {
+          "voice": "uncle_fu",
+          "elapsed_seconds": 2.773,
+          "audio_seconds": 7.92,
+          "rtf": 0.3502,
+          "audio_file": "tts/outputs/benchmark/0.6b-faster-uncle_fu.wav"
+        }
+      ],
+      "load_seconds": 2.447,
+      "warmup_seconds": 6.827,
+      "rtf": 0.3504
+    }
+  ],
+  "rtf_speedup": 6.245,
+  "document_benchmark": {
+    "source_characters": 1888,
+    "sentences": 37,
+    "backend": "faster",
+    "model_size": "0.6b",
+    "elapsed_seconds": 174.031,
+    "audio_seconds": 437.928,
+    "rtf": 0.3974,
+    "original_standard_wall_seconds": 1004.322,
+    "includes_cold_load_and_warmup": true,
+    "metadata": {
+      "provider": "local_http",
+      "engine_id": "qwen3-customvoice",
+      "format": "mp3",
+      "sample_rate": 24000,
+      "channels": 1,
+      "simulated": false,
+      "real_speech": true,
+      "script_simulated": true,
+      "sentence_count": 37,
+      "chunk_count": 38,
+      "turn_silence_ms": 250,
+      "voice_versions": [],
+      "model_revision": null,
+      "model_id": "Qwen3-TTS-12Hz-0.6B-CustomVoice",
+      "backend": "faster"
+    },
+    "wall_time_speedup": 5.771
+  },
+  "large_model_benchmark": {
+    "checked_at": "2026-11-16T05:43:28.612588+00:00",
+    "model_size": "1.7b",
+    "text": "欢迎收听今天的科技播客，我们一起聊聊人工智能如何改变日常生活。",
+    "device": "NVIDIA GeForce RTX 5060 Ti",
+    "runs": [
+      {
+        "backend": "faster",
+        "samples": [
+          {
+            "voice": "vivian",
+            "elapsed_seconds": 3.094,
+            "audio_seconds": 7.44,
+            "rtf": 0.4158,
+            "audio_file": "tts/outputs/benchmark/1.7b-faster-vivian.wav"
+          },
+          {
+            "voice": "uncle_fu",
+            "elapsed_seconds": 3.242,
+            "audio_seconds": 7.84,
+            "rtf": 0.4136,
+            "audio_file": "tts/outputs/benchmark/1.7b-faster-uncle_fu.wav"
+          }
+        ],
+        "load_seconds": 6.627,
+        "warmup_seconds": 8.465,
+        "rtf": 0.4147
+      }
+    ]
+  },
+  "large_model_revision": "0c0e3051f131929182e2c023b9537f8b1c68adfe"
+}

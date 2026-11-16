@@ -15,7 +15,7 @@ from .qwen import Qwen3Engine, QwenConfig, _pcm_wav
 
 class Qwen3BaseEngine(Qwen3Engine):
     def __init__(self, config, reference_dir, lock=None):
-        super().__init__(config)
+        super().__init__(replace(config, backend="standard"))
         self.reference_dir = Path(reference_dir).resolve()
         self._prompts = OrderedDict()
         self._loaded_revision = None

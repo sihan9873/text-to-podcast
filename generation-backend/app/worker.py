@@ -39,6 +39,7 @@ class Worker:
         stopped = Event()
         heart = Thread(target=self.renew, args=(job, stopped), daemon=True)
         heart.start()
+        logger.info("Task started: id=%s type=%s", job["id"], job["task_type"])
         try:
             if job["task_type"] == "script":
                 generator = self.script_generator or script_generator_for_snapshot(
@@ -50,7 +51,9 @@ class Worker:
                 result = generator.generate(deepcopy(job["snapshot"]))
                 publish_script(self.database, job, result)
             else:
-                generator = self.audio_generator or generator_for_snapshot(job["snapshot"])
+                generator = self.audio_generator or generator_for_snapshot(job["snapshot"],
+                    lambda stage, percent, completed: repository.progress(
+                        self.database, job["id"], job["token"], stage, percent, completed))
                 result = generator.generate(deepcopy(job["snapshot"]))
                 publish_audio(self.database, self.storage, job, result)
             logger.info("Task completed: id=%s type=%s", job["id"], job["task_type"])

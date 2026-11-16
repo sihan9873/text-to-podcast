@@ -14,6 +14,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct"
+LARGE_MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
+MODEL_IDS = (MODEL_ID, LARGE_MODEL_ID)
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +35,7 @@ class Role(Input):
 
 
 class GenerateRequest(Input):
-    model_id: Literal[MODEL_ID]
+    model_id: Literal[MODEL_ID, LARGE_MODEL_ID]
     source_text: str = Field(min_length=1, max_length=5000)
     roles: list[Role] = Field(min_length=1, max_length=8)
     system_prompt: str = Field(min_length=1, max_length=4000)
@@ -103,8 +105,9 @@ def generation_messages(request):
 
 
 class QwenGenerator:
-    def __init__(self):
-        self.model_path = Path(os.environ.get("LLM_MODEL_PATH", str(ROOT / "models/Qwen2.5-0.5B-Instruct"))).expanduser().resolve()
+    def __init__(self, model_id=MODEL_ID):
+        self.model_id = model_id
+        self.model_path = Path(os.environ.get("LLM_MODEL_PATH" if model_id == MODEL_ID else "LLM_4B_MODEL_PATH", str(ROOT / "models" / model_id.split("/")[-1]))).expanduser().resolve()
         self.device = os.environ.get("LLM_DEVICE", "cuda:0")
         if not re.fullmatch(r"cpu|cuda:[0-9]+", self.device):
             raise ValueError("LLM_DEVICE 仅支持 cpu 或 cuda:N")
@@ -112,8 +115,19 @@ class QwenGenerator:
         self.lock = threading.Lock()
 
     def info(self):
-        required = ("config.json", "model.safetensors", "tokenizer.json", "tokenizer_config.json")
-        return {"model_id": MODEL_ID, "installed": all((self.model_path / n).is_file() for n in required),
+        required = ["config.json", "tokenizer.json", "tokenizer_config.json"]
+        index = self.model_path / "model.safetensors.index.json"
+        if index.is_file():
+            try:
+                shards = set(json.loads(index.read_text())["weight_map"].values())
+                if not shards or any(Path(n).name != n for n in shards):
+                    raise ValueError("invalid shards")
+                required.extend(shards)
+            except (ValueError, KeyError, TypeError):
+                required.append("invalid-model-index")
+        else:
+            required.append("model.safetensors")
+        return {"model_id": self.model_id, "installed": all((self.model_path / n).is_file() and (self.model_path / n).stat().st_size > 0 for n in required),
                 "loaded": self.model is not None, "device": self.device}
 
     def _load(self):
@@ -158,7 +172,7 @@ class QwenGenerator:
                 raise ServiceError("output_truncated", "脚本输出达到 token 上限，请缩短要求或增加输出预算。", 502)
             script = parse_script(self.tokenizer.decode(tokens, skip_special_tokens=True), request.roles,
                                   request.require_all_roles)
-            return {"model_id": MODEL_ID, "simulated": False, "script": script}
+            return {"model_id": self.model_id, "simulated": False, "script": script}
         except ServiceError:
             raise
         except Exception as exc:
@@ -173,6 +187,8 @@ class QwenGenerator:
 
 def create_app(generator=None):
     engine = generator if generator is not None else QwenGenerator()
+    engines = {MODEL_ID: engine, LARGE_MODEL_ID: QwenGenerator(LARGE_MODEL_ID)}
+    service_lock = threading.Lock()
     app = FastAPI(title="Local Qwen Script Service", version="0.1.0")
 
     @app.exception_handler(ServiceError)
@@ -189,11 +205,25 @@ def create_app(generator=None):
 
     @app.get("/v1/models")
     def models():
-        return {"models": [engine.info()]}
+        return {"models": [item.info() for item in engines.values()]}
 
     @app.post("/v1/scripts/generate")
     def generate(request: GenerateRequest):
-        return engine.generate(request)
+        if not service_lock.acquire(blocking=False):
+            raise ServiceError("engine_busy", "LLM 正在处理其他请求，请稍后重试。")
+        try:
+            selected = engines[request.model_id]
+            for other in engines.values():
+                if other is not selected and getattr(other, "model", None) is not None:
+                    other.model = other.tokenizer = None
+                    import gc
+                    import torch
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+            return selected.generate(request)
+        finally:
+            service_lock.release()
 
     return app
 

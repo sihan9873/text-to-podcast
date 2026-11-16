@@ -6,6 +6,8 @@
 import io
 import json
 import math
+import logging
+import time
 import os
 import re
 import shutil
@@ -17,6 +19,8 @@ import wave
 
 from app.core.common import BusinessError
 from app.integrations.contracts import GeneratedAudio
+
+logger = logging.getLogger(__name__)
 
 MAX_WAV_BYTES = 20 * 1024 * 1024
 
@@ -54,8 +58,9 @@ def split_text(text, limit):
 
 
 class LocalTTSAudioGenerator:
-    def __init__(self, config, opener=None):
+    def __init__(self, config, opener=None, on_progress=None):
         self.config = dict(config)
+        self.on_progress = on_progress or (lambda _stage, _percent, _completed: None)
         url = urlsplit(config["base_url"])
         if url.scheme not in ("http", "https") or not url.hostname or url.username or url.password or url.query or url.fragment:
             raise BusinessError("TTS_INVALID_CONFIG", "本地 TTS 服务地址无效")
@@ -159,7 +164,7 @@ class LocalTTSAudioGenerator:
             sentences = sorted(snapshot["script"]["sentences"], key=lambda s: s["sequence"])
             if not sentences or len({s["sequence"] for s in sentences}) != len(sentences):
                 raise ValueError("empty or duplicate sequence")
-            if sum(len(s["text"]) for s in sentences) > 5000:
+            if sum(len(s["text"]) for s in sentences) > (100000 if snapshot.get("generation_mode") == "verbatim" else 5000):
                 raise ValueError("script too long")
             prepared = []
             for sentence in sentences:
@@ -187,13 +192,20 @@ class LocalTTSAudioGenerator:
         except (KeyError, TypeError, ValueError, AttributeError) as exc:
             raise BusinessError("TTS_INVALID_SCRIPT", "脚本快照或 TTS 元数据结构不符合接口契约", 422) from exc
 
+        total_chunks = sum(len(chunks) for _, _, _, chunks in prepared)
+        logger.info("Audio synthesis started: engine=%s sentences=%s chunks=%s characters=%s",
+                    self.config['engine_id'], len(sentences), total_chunks, sum(len(s['text']) for s in sentences))
+        self.on_progress("synthesizing", 5, 0)
         pcm = bytearray()
         chunks_generated = 0
         previous_role = None
-        for sentence, voice_id, speed, chunks in prepared:
+        for sentence_index, (sentence, voice_id, speed, chunks) in enumerate(prepared):
             if previous_role is not None and previous_role != sentence["role_id"]:
                 pcm.extend(b"\0\0" * (self.config["sample_rate"] * self.config["turn_silence_ms"] // 1000))
-            for text in chunks:
+            for chunk_index, text in enumerate(chunks):
+                started = time.monotonic()
+                logger.info("Audio chunk started: chunk=%s/%s sentence=%s/%s voice=%s characters=%s",
+                            chunks_generated + 1, total_chunks, sentence_index + 1, len(sentences), voice_id, len(text))
                 if cloning:
                     reference = {k: v for k, v in references[voice_id].items() if k != "voice_version_id"}
                     wav = self._request("/v1/clone", {"text": text, "engine_id": self.config["engine_id"],
@@ -203,7 +215,13 @@ class LocalTTSAudioGenerator:
                                                          "voice_id": voice_id, "speed": speed, "output_type": "wav"}, audio=True)
                 pcm.extend(self._pcm(wav))
                 chunks_generated += 1
+                completed = sentence_index + (1 if chunk_index == len(chunks) - 1 else 0)
+                logger.info("Audio chunk completed: chunk=%s/%s elapsed_seconds=%.2f",
+                            chunks_generated, total_chunks, time.monotonic() - started)
+                self.on_progress("synthesizing", 5 + round(85 * chunks_generated / total_chunks), completed)
             previous_role = sentence["role_id"]
+        self.on_progress("encoding_audio", 95, len(sentences))
+        logger.info("Audio encoding started: completed_sentences=%s chunks=%s", len(sentences), chunks_generated)
         rate = self.config["sample_rate"]
         content = self._ffmpeg(["-f", "s16le", "-ar", str(rate), "-ac", "1", "-i", "pipe:0",
                                 "-codec:a", "libmp3lame", "-b:a", "128k", "-f", "mp3", "pipe:1"], pcm)
@@ -223,13 +241,14 @@ class LocalTTSAudioGenerator:
             "turn_silence_ms": self.config["turn_silence_ms"],
             "voice_versions": [r["voice_version_id"] for r in references.values()],
             "model_revision": engine.get("model_revision"),
+            "model_id": engine.get("model_id"), "backend": engine.get("backend"),
         })
 
 
-def generator_for_snapshot(snapshot):
+def generator_for_snapshot(snapshot, on_progress=None):
     config = snapshot.get("audio_config", {"provider": "mock"})
     if config["provider"] == "local_http":
-        return LocalTTSAudioGenerator(config)
+        return LocalTTSAudioGenerator(config, on_progress=on_progress)
     if config["provider"] == "mock":
         from app.integrations.mock import MockAudioGenerator
         return MockAudioGenerator()

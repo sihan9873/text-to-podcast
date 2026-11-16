@@ -16,10 +16,10 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "generation-backend/data/local-console"
 MODES = ("mock", "http-mock", "customvoice", "clone")
-OPTION_KEYS = {"PODCAST_LLM_MODEL_PATH", "PODCAST_CUSTOMVOICE_MODEL_PATH", "PODCAST_BASE_MODEL_PATH",
+OPTION_KEYS = {"PODCAST_CUSTOMVOICE_LARGE_MODEL_PATH", "PODCAST_LLM_MODEL_PATH", "PODCAST_CUSTOMVOICE_MODEL_PATH", "PODCAST_BASE_MODEL_PATH",
                "PODCAST_BACKEND_PYTHON", "PODCAST_GENERATION_BACKEND_PYTHON", "PODCAST_LLM_PYTHON",
                "PODCAST_TTS_PYTHON", "PODCAST_TTS_REAL_PYTHON", "LLM_DEVICE", "TTS_QWEN_DEVICE",
-               "PODCAST_NODE_BINARY", "PODCAST_PNPM_BINARY"}
+               "PODCAST_NODE_BINARY", "PODCAST_PNPM_BINARY", "TTS_MODEL_SIZE", "TTS_QWEN_BACKEND"}
 
 
 def options():
@@ -48,6 +48,23 @@ def python_for(module):
     conda = Path(os.environ.get("CONDA_EXE", shutil.which("conda") or sys.executable)).resolve().parent.parent
     path = conda / "envs" / name / ("python.exe" if os.name == "nt" else "bin/python")
     return str(path) if path.is_file() else sys.executable
+
+
+def tts_python(settings=None):
+    settings = settings or options()
+    if settings.get("TTS_QWEN_BACKEND", "standard") == "faster":
+        return str(ROOT / "tts/.venv-fast" / ("Scripts/python.exe" if os.name == "nt" else "bin/python"))
+    return python_for("tts-real")
+
+
+def tts_environment(settings):
+    size = settings.get("TTS_MODEL_SIZE", "0.6b")
+    backend = settings.get("TTS_QWEN_BACKEND", "standard")
+    if size not in ("0.6b", "1.7b") or backend not in ("standard", "faster"):
+        raise ValueError("TTS 模型规格或后端无效")
+    path = settings.get("PODCAST_CUSTOMVOICE_MODEL_PATH" if size == "0.6b" else "PODCAST_CUSTOMVOICE_LARGE_MODEL_PATH")
+    return {"TTS_MODEL_SIZE": size, "TTS_QWEN_BACKEND": backend,
+            "TTS_QWEN_MODEL_PATH": path or str(ROOT / f"tts/models/Qwen3-TTS-12Hz-{size.upper()}-CustomVoice")}
 
 
 def pnpm():
@@ -106,6 +123,7 @@ def prepare(mode):
         "TTS_QWEN_DTYPE": "float32" if settings.get("TTS_QWEN_DEVICE") == "cpu" else "bfloat16",
         "VITE_ENABLE_MOCK": "false", "VITE_API_BASE_URL": "/api", "VITE_GENERATION_API_BASE_URL": "/api/v1",
     }
+    env.update(tts_environment(settings))
     config = {"mode": mode, "env": env}
     path = folder / "config.json"
     path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -250,8 +268,16 @@ def main():
             raise RuntimeError("Base 模式请在声音库选择已上传的私有声音试听")
         run([python_for("tts"), str(ROOT / "tts/scripts/demo_tts_service.py"), "--api-url", "http://127.0.0.1:8002",
              "--engine-id", config["env"]["LOCAL_TTS_ENGINE_ID"], "--output-dir", str(folder / "results/tts-demo")])
-    elif action == "download-llm":
-        run([python_for("llm"), str(ROOT / "llm/scripts/download_model.py")])
+    elif action in ("download-llm", "download-llm-4b"):
+        run([python_for("llm"), str(ROOT / "llm/scripts/download_model.py"), "--model", "4b" if action.endswith("4b") else "0.5b"])
+    elif action == "install-tts-fast":
+        target = ROOT / "tts/.venv-fast"
+        if not target.exists():
+            run([python_for("tts-real"), "-m", "venv", "--system-site-packages", str(target)])
+        executable = target / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        run([str(executable), "-m", "pip", "install", "--no-deps", "-r", str(ROOT / "tts/requirements/tts-fast.txt")])
+    elif action == "download-customvoice-1.7b":
+        run([python_for("tts-real"), str(ROOT / "scripts/download_tts_model.py"), "customvoice", "--size", "1.7b"])
     elif action in ("download-customvoice", "download-base"):
         run([python_for("tts-real"), str(ROOT / "scripts/download_tts_model.py"), action.removeprefix("download-")])
     elif action.startswith("test-"):

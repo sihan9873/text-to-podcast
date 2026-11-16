@@ -24,6 +24,10 @@
   <details><summary>模型、设备和 Python 环境设置（保存后下轮生效）</summary><div id="settings"></div><button id="save-settings" style="margin-top:16px">保存本地设置</button></details>
 </section>
 <section>
+  <div class="row"><h2 style="margin:0">硬件检测</h2><button id="detect-hardware">检测 / 刷新硬件</button><button id="download-hardware">下载检测报告</button><small id="hardware-status">未检测</small></div>
+  <div id="hardware-summary" style="margin-top:14px">检测 CPU、内存、显卡、空闲显存、CUDA 和 TTS 加速环境；不加载模型。</div>
+</section>
+<section>
   <h2>2. 启动本轮测试服务</h2>
   <div class="row">
     <label for="mode">运行模式</label><select id="mode"><option value="mock">M1 · 真实业务服务 + Mock 生成</option><option value="http-mock">M2 · HTTP Mock TTS + FFmpeg</option><option value="customvoice">R1 · 真实 LLM + Qwen 预设声音</option><option value="clone">R2 · 真实 LLM + Qwen 声音克隆</option></select>
@@ -38,15 +42,16 @@
   <section><h2>4. 执行记录</h2><div id="jobs"></div></section>
 </div>
 <div id="message" role="status" aria-live="polite"></div>
-<section><div class="row"><h2 style="margin:0">实时输出</h2><label for="log-source">日志来源</label><select id="log-source"><option value="">请选择任务或服务</option></select><button id="download-log">下载当前日志</button></div><pre id="log" tabindex="0">执行任务后在这里查看输出、失败原因和退出码。</pre></section>
+<section><div class="row"><h2 style="margin:0">实时输出</h2><small id="log-updated">约每 1.2 秒刷新，显示末尾 64 KB；选择 Worker 查看分句进度</small><label for="log-source">日志来源</label><select id="log-source"><option value="">请选择任务或服务</option></select><button id="download-log">下载当前日志</button></div><pre id="log" tabindex="0">执行任务后在这里查看输出、失败原因和退出码。</pre></section>
 <section><h2>5. 脚本、报告与音频</h2><div id="artifacts">尚无产物</div></section>
 <script>
 const token='__TOKEN__';
 const $=id=>document.getElementById(id);
 let pending=false,lastState='',lastArtifacts='',lastOptions='',logText='';
-const settings={PODCAST_LLM_MODEL_PATH:'LLM 模型绝对路径',PODCAST_CUSTOMVOICE_MODEL_PATH:'CustomVoice 模型绝对路径',PODCAST_BASE_MODEL_PATH:'Base 克隆模型绝对路径',LLM_DEVICE:'LLM 设备（cpu 或 cuda:0）',TTS_QWEN_DEVICE:'TTS 设备（cpu 或 cuda:0）',PODCAST_BACKEND_PYTHON:'账号 Python 绝对路径',PODCAST_GENERATION_BACKEND_PYTHON:'生成服务 Python 绝对路径',PODCAST_LLM_PYTHON:'LLM Python 绝对路径',PODCAST_TTS_PYTHON:'Mock TTS Python 绝对路径',PODCAST_TTS_REAL_PYTHON:'真实 TTS Python 绝对路径'};
+const settings={PODCAST_LLM_MODEL_PATH:'LLM 模型绝对路径',PODCAST_CUSTOMVOICE_MODEL_PATH:'CustomVoice 0.6B 模型绝对路径',PODCAST_CUSTOMVOICE_LARGE_MODEL_PATH:'CustomVoice 1.7B 模型绝对路径',PODCAST_BASE_MODEL_PATH:'Base 克隆模型绝对路径',LLM_DEVICE:'LLM 设备（cpu 或 cuda:0）',TTS_QWEN_DEVICE:'TTS 设备（cpu 或 cuda:0）',PODCAST_BACKEND_PYTHON:'账号 Python 绝对路径',PODCAST_GENERATION_BACKEND_PYTHON:'生成服务 Python 绝对路径',PODCAST_LLM_PYTHON:'LLM Python 绝对路径',PODCAST_TTS_PYTHON:'Mock TTS Python 绝对路径',PODCAST_TTS_REAL_PYTHON:'真实 TTS Python 绝对路径'};
 Object.assign(settings,{PODCAST_NODE_BINARY:'Node.js 可执行文件绝对路径（PATH 未配置时填写）',PODCAST_PNPM_BINARY:'pnpm 可执行文件绝对路径（PATH 未配置时填写）'});
-for(const [key,label] of Object.entries(settings)){const l=document.createElement('label');l.htmlFor=key;l.textContent=label;const input=document.createElement('input');input.id=key;input.placeholder='留空使用默认值 / 自动发现';$('settings').append(l,input)}
+Object.assign(settings,{TTS_MODEL_SIZE:'TTS 预设声音模型（官方提供 0.6B / 1.7B，无 4B）',TTS_QWEN_BACKEND:'TTS 推理后端（faster 需要独立加速环境与 CUDA）'});
+for(const [key,label] of Object.entries(settings)){const l=document.createElement('label');l.htmlFor=key;l.textContent=label;const choices=key==='TTS_MODEL_SIZE'?[['','默认 · 0.6B'],['0.6b','0.6B · 速度优先'],['1.7b','1.7B · 质量升级']]:key==='TTS_QWEN_BACKEND'?[['','默认 · 标准后端'],['standard','标准 · SDK + SDPA'],['faster','加速 · CUDA Graph（首次需要预热）']]:null;const input=document.createElement(choices?'select':'input');if(choices)for(const [value,text] of choices)input.append(new Option(text,value));input.id=key;input.placeholder='留空使用默认值 / 自动发现';$('settings').append(l,input)}
 async function api(path,body){
   const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Console-Token':token},body:JSON.stringify(body)});
   const data=await response.json();if(!response.ok)throw Error(data.error||'请求失败');return data;
@@ -63,7 +68,7 @@ $('restart').onclick=()=>act('/api/restart',{});
 $('save-settings').onclick=()=>act('/api/settings',Object.fromEntries(Object.keys(settings).map(k=>[k,$(k).value.trim()])));
 $('log-source').onchange=refreshLog;
 $('download-log').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([logText],{type:'text/plain;charset=utf-8'}));a.download=($('log-source').value||'console')+'.log';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
-async function refreshLog(){const name=$('log-source').value;if(!name)return;try{const data=await api('/api/log/'+encodeURIComponent(name));const node=$('log');const nearBottom=node.scrollHeight-node.scrollTop-node.clientHeight<50;logText=data.log;node.textContent=logText;if(nearBottom)node.scrollTop=node.scrollHeight}catch(e){$('message').textContent=e.message}}
+async function refreshLog(){const name=$('log-source').value;if(!name)return;try{const data=await api('/api/log/'+encodeURIComponent(name));const node=$('log');const nearBottom=node.scrollHeight-node.scrollTop-node.clientHeight<50;logText=data.log;node.textContent=logText;$('log-updated').textContent='最近读取：'+new Date().toLocaleTimeString()+' · 约每 1.2 秒刷新 · 末尾 64 KB';if(nearBottom)node.scrollTop=node.scrollHeight}catch(e){$('message').textContent=e.message}}
 async function refresh(){
   const state=await api('/api/state');
   if(!lastState){for(const [action,label] of Object.entries(state.tasks)){if(!['preflight','install'].includes(action))$('tasks').append(button(label,action))}for(const key of Object.keys(settings))$(key).value=state.settings[key]||''}
@@ -82,6 +87,30 @@ async function refresh(){
   const artifacts=await api('/api/artifacts');if(JSON.stringify(artifacts)!==lastArtifacts){lastArtifacts=JSON.stringify(artifacts);$('artifacts').replaceChildren();if(!artifacts.length)$('artifacts').textContent='闭环验证成功后，报告、脚本和音频将出现在这里。';for(const path of artifacts){const row=document.createElement('div');row.className='artifact';const url='/artifacts/'+path.split('/').map(encodeURIComponent).join('/');const link=document.createElement('a');link.href=url;link.textContent=path;link.target='_blank';row.append(link);if(/\.(mp3|wav)$/.test(path)){const audio=document.createElement('audio');audio.controls=true;audio.preload='none';audio.src=url;row.append(audio)}$('artifacts').append(row)}}
   await refreshLog();
 }
+let hardwareReport=null,hardwareTimer=null;
+function gib(bytes){return typeof bytes==='number'?(bytes/1024**3).toFixed(1)+' GB':'未知'}
+async function refreshHardware(force=false){
+  clearTimeout(hardwareTimer);
+  try{
+    const result=await api('/api/hardware'+(force?'?refresh=1':''));
+    $('hardware-status').textContent=result.status==='detecting'?'检测中…':result.error?'检测失败：'+result.error:'检测完成（刷新间隔至少 30 秒）';
+    if(result.report){
+      hardwareReport=result.report;const r=result.report,box=$('hardware-summary');box.replaceChildren();
+      const lines=[r.os+' '+r.release,'CPU：'+r.cpu.name+' · '+r.cpu.logical_cores+' 逻辑核','内存：'+gib(r.memory.available_bytes)+' 可用 / '+gib(r.memory.total_bytes)+' 总量','磁盘剩余：'+gib(r.disk.free_bytes)];
+      for(const gpu of r.gpu.devices)lines.push('GPU '+gpu.index+'：'+gpu.name+' · 显存 '+(gpu.free_mib===null?'未知':(gpu.free_mib/1024).toFixed(1))+' / '+(gpu.total_mib/1024).toFixed(1)+' GB · 使用率 '+gpu.utilization_percent+'% · 驱动 '+gpu.driver_version);
+      if(!r.gpu.available)lines.push(r.gpu.reason||'没有可用 NVIDIA 显卡');
+      lines.push('PyTorch：'+(r.runtime.torch_version||'不可用')+' · CUDA 构建：'+(r.runtime.cuda_build||'无')+' · CUDA 可用：'+Boolean(r.runtime.cuda_available));
+      for(const [name,pkg] of Object.entries(r.runtime.packages||{}))if(name!=='torch')lines.push(name+'：'+(pkg.installed?(pkg.version||'已安装'):'未安装'));
+      lines.push('检测时间：'+new Date(r.checked_at).toLocaleString());
+      for(const line of lines){const div=document.createElement('div');div.textContent=line;div.style.marginBottom='7px';box.append(div)}
+      for(const hint of r.recommendations){const p=document.createElement('p');p.textContent=hint;box.append(p)}
+    }
+    if(result.status==='detecting')hardwareTimer=setTimeout(()=>refreshHardware(),1000);
+  }catch(e){$('hardware-status').textContent='硬件检测不可用：'+e.message}
+}
+$('detect-hardware').onclick=()=>refreshHardware(true);
+$('download-hardware').onclick=()=>{if(!hardwareReport)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(hardwareReport,null,2)],{type:'application/json'}));a.download='hardware-report.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+refreshHardware();
 async function poll(){try{await refresh()}catch(e){$('message').textContent='控制台连接中断：'+e.message}setTimeout(poll,1200)}poll();
 </script>
 </html>

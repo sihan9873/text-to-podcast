@@ -65,6 +65,8 @@ class RoleChoice(Input):
 
 
 class ScriptGenerate(Input):
+    generation_mode: Literal["prompt", "verbatim", "summary"] = "prompt"
+    model_id: Id | None = None
     roles: list[RoleChoice] = Field(min_length=1, max_length=8)
     target_minutes: int = Field(default=10, ge=1, le=20)
     style: str = Field(default="自然、清晰、连贯", min_length=1, max_length=200)

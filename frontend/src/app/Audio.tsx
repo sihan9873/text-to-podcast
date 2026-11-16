@@ -592,6 +592,7 @@ function GeneratePanel({ projectId, script, confirmed, onAccepted }: GeneratePan
     setFullTask(null)
     try {
       const accepted = await audioApi.generate(projectId, expected, newIdempotencyKey())
+      onAccepted()
       const task = await pollTask(accepted.task_id, {
         signal: controller.signal,
         onUpdate: setFullTask,
@@ -600,16 +601,17 @@ function GeneratePanel({ projectId, script, confirmed, onAccepted }: GeneratePan
       onAccepted()
     } catch (e) {
       if (isAbort(e)) return
-      setFullError(e instanceof ApiError ? `${e.code}: ${e.message}` : "生成失败")
+      setFullError(e instanceof ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : "无法读取任务状态，请刷新后查看后台任务")
     } finally {
       setFullLoading(false)
     }
   }
 
+  const visibleTask = fullTask
   const busy = previewLoading || fullLoading
   const progress =
-    typeof fullTask?.progress === "number"
-      ? Math.min(100, Math.max(0, fullTask.progress))
+    typeof visibleTask?.progress === "number"
+      ? Math.min(100, Math.max(0, visibleTask.progress))
       : null
 
   return (
@@ -674,7 +676,7 @@ function GeneratePanel({ projectId, script, confirmed, onAccepted }: GeneratePan
         {previewError && <InlineError className="mt-4">{previewError}</InlineError>}
         {fullError && <InlineError className="mt-4">{fullError}</InlineError>}
 
-        {fullTask?.status === "running" && (
+        {(visibleTask?.status === "running" || visibleTask?.status === "queued") && (
           <div
             role="status"
             className="mt-5 rounded-xl border border-sky-500/20 bg-sky-500/5 p-4"
@@ -682,10 +684,11 @@ function GeneratePanel({ projectId, script, confirmed, onAccepted }: GeneratePan
             <div className="flex items-center justify-between text-sm text-sky-300">
               <span className="flex items-center gap-2">
                 <Loader2 className="size-4 animate-spin" />
-                全文生成中…
+                {visibleTask.stage === 'encoding_audio' ? '正在合并并编码音频…' : '全文生成中…'}
               </span>
               {progress !== null && <span className="tabular-nums">{progress}%</span>}
             </div>
+            <p className="mt-2 text-xs text-muted-foreground">已完成 {visibleTask.completed_sentences} / {visibleTask.total_sentences} 句。长文本可能需要十几分钟或更久，后台会继续处理，请勿重复提交。</p>
             <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-secondary">
               <div
                 className={cn(
@@ -733,7 +736,6 @@ function AudioVersionView({
   const [activeSentenceId, setActiveSentenceId] = React.useState<string | null>(null)
 
   const load = React.useCallback(async () => {
-    setLoading(true)
     setError(null)
     try {
       const [d, s] = await Promise.all([
@@ -849,8 +851,9 @@ function AudioVersionView({
                 <Loader2 className="size-4 animate-spin" />
                 音频生成中，每 2 秒自动刷新…
               </div>
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-secondary">
-                <div className="h-full w-1/3 animate-pulse rounded-full bg-sky-400/70" />
+              <p className="mt-2 text-xs text-muted-foreground">已完成 {sentences.completed_sentences} / {sentences.total_sentences} 句。长文本可能需要十几分钟或更久，后台会继续处理，请勿重复提交。</p>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-secondary">
+                <div className="h-full rounded-full bg-sky-400/70 transition-all" style={{ width: `${sentences.total_sentences ? Math.max(5, Math.round(95 * sentences.completed_sentences / sentences.total_sentences)) : 5}%` }} />
               </div>
             </div>
           ) : null}

@@ -71,3 +71,21 @@ class ServiceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MultiModelTests(unittest.TestCase):
+    def test_large_model_request_and_sharded_installation(self):
+        import tempfile
+        from llm_service.app import LARGE_MODEL_ID
+        request = GenerateRequest(model_id=LARGE_MODEL_ID, source_text="写一期科学播客", roles=[{"role_key": "a", "name": "A"}], system_prompt="脚本")
+        self.assertEqual(request.model_id, LARGE_MODEL_ID)
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.dict(os.environ, {"LLM_4B_MODEL_PATH": folder}):
+                engine = QwenGenerator(LARGE_MODEL_ID)
+            for name in ("config.json", "tokenizer.json", "tokenizer_config.json", "model-00001-of-00002.safetensors"):
+                (Path(folder) / name).write_text("{}")
+            (Path(folder) / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {"a": "model-00001-of-00002.safetensors", "b": "model-00002-of-00002.safetensors"}}))
+            self.assertFalse(engine.info()["installed"])
+            (Path(folder) / "model-00002-of-00002.safetensors").write_text("weights")
+            self.assertTrue(engine.info()["installed"])
+            self.assertEqual(engine.info()["model_id"], LARGE_MODEL_ID)

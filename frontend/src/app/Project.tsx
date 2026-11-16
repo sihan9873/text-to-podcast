@@ -163,6 +163,9 @@ interface GenerateDialogProps {
 
 function GenerateDialog({ projectId, onClose, onSubmitted }: GenerateDialogProps) {
   const [selected, setSelected] = React.useState<string[]>([])
+  const [generationMode, setGenerationMode] = React.useState<"prompt" | "verbatim" | "summary">("prompt")
+  const [modelId, setModelId] = React.useState("")
+  const { data: modelsData } = useQuery({ queryKey: ["models"], queryFn: () => configApi.models({ page_size: 100 }) })
   const [targetMinutes, setTargetMinutes] = React.useState(10)
   const [style, setStyle] = React.useState("自然、清晰、连贯")
   const [submitting, setSubmitting] = React.useState(false)
@@ -201,7 +204,7 @@ function GenerateDialog({ projectId, onClose, onSubmitted }: GenerateDialogProps
       })
       await scriptsApi.generate(
         projectId,
-        { roles: payloadRoles, target_minutes: targetMinutes, style: style.trim() },
+        { roles: payloadRoles, target_minutes: targetMinutes, style: style.trim(), generation_mode: generationMode, ...(modelId ? { model_id: modelId } : {}) },
         newIdempotencyKey(),
       )
       onSubmitted()
@@ -234,15 +237,33 @@ function GenerateDialog({ projectId, onClose, onSubmitted }: GenerateDialogProps
       >
         <h2 className="text-lg font-semibold">生成脚本</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          设置整期节目目标，长文本将先建立全局大纲，再带着前文记忆分节生成。
+          选择一位主持人独播，或选择两位主持人共同播报。请先在项目中提交提示词或原文。
         </p>
 
+        <div className="mt-4 space-y-3">
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium">脚本生成模式</span>
+            <select aria-label="脚本生成模式" value={generationMode} disabled={submitting} onChange={e => setGenerationMode(e.target.value as typeof generationMode)} className="h-10 w-full rounded-lg border border-input bg-card px-3">
+              <option value="prompt">提示词创作脚本</option>
+              <option value="verbatim">保留原文生成脚本</option>
+              <option value="summary">长文本概括脚本</option>
+            </select>
+          </label>
+          <p className="text-xs text-muted-foreground">{generationMode === "prompt" ? "把已提交内容作为提示词，围绕主题创作台词（提示词最多5000字符）。" : generationMode === "verbatim" ? "逐字保留已提交原文，仅分句并分配给主持人；不调用模型，目标时长与风格不参与改写。" : "对已提交原文分段提炼、建立全局大纲，再概括为连贯脚本；支持最长10万字符。"}</p>
+          {generationMode !== "verbatim" && <label className="block text-sm">
+            <span className="mb-1 block font-medium">脚本模型</span>
+            <select aria-label="脚本模型" value={modelId} disabled={submitting} onChange={e => setModelId(e.target.value)} className="h-10 w-full rounded-lg border border-input bg-card px-3">
+              <option value="">使用当前服务默认模型</option>
+              {modelsData?.items.map(model => <option key={model.model_id} value={model.model_id}>{model.name}</option>)}
+            </select>
+          </label>}
+        </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="text-sm">
             <span className="mb-1 block font-medium">目标节目时长</span>
             <select
               value={targetMinutes}
-              disabled={submitting}
+              disabled={submitting || generationMode === "verbatim"}
               onChange={(event) => setTargetMinutes(Number(event.target.value))}
               className="h-10 w-full rounded-lg border border-input bg-card px-3"
             >
@@ -254,7 +275,7 @@ function GenerateDialog({ projectId, onClose, onSubmitted }: GenerateDialogProps
             <input
               value={style}
               maxLength={200}
-              disabled={submitting}
+              disabled={submitting || generationMode === "verbatim"}
               onChange={(event) => setStyle(event.target.value)}
               className="h-10 w-full rounded-lg border border-input bg-card px-3"
               placeholder="自然、清晰、连贯"

@@ -141,7 +141,10 @@ class LocalLLMScriptGenerator:
         preferences = snapshot.get("generation_preferences", {})
         style = preferences.get("style", "自然、清晰、连贯")
         target = preferences.get("target_characters", 2_400)
-        prompt = f"{snapshot['prompt']}\n主持风格：{style}。目标台词总长度约 {target} 字。"
+        mode_prompt = ("根据用户提示词创作完整播客，允许围绕主题展开，遵守用户要求。"
+                       if snapshot.get("generation_mode", "prompt") == "prompt" else
+                       "概括给定原文，保留核心事实、数字和观点，删除重复，不添加原文没有的事实。")
+        prompt = f"{snapshot['prompt']}\n{SYSTEM_PROMPT}\n{mode_prompt}\n主持风格：{style}。目标台词总长度约 {target} 字。"
         return self.client.generate(snapshot["source_text"], prompt, snapshot["roles"], require_all_roles=True)
 
 
@@ -293,10 +296,60 @@ class CoherentLongDocumentScriptGenerator:
         return result
 
 
+class VerbatimScriptGenerator:
+    """Slice only: concatenating all spoken text reconstructs the source exactly."""
+
+    def generate(self, snapshot: dict) -> GeneratedScript:
+        source = snapshot["source_text"]
+        roles = snapshot["roles"]
+        # Keep whitespace with adjacent speech; no model is allowed to rewrite the source.
+        parts = re.findall(r".*?[。！？!?；;\n]+|.+$", source, re.DOTALL)
+        lines = []
+        pending = ""
+        for part in parts:
+            pending += part
+            while len(pending) > 1000:
+                if not pending[:1000].strip():
+                    raise BusinessError("VERBATIM_WHITESPACE_TOO_LONG", "原文包含超过单句限制的连续空白，请整理空白后重新提交")
+                lines.append(pending[:1000])
+                pending = pending[1000:]
+            if pending.strip():
+                lines.append(pending)
+                pending = ""
+        if pending:
+            if lines and len(lines[-1]) + len(pending) <= 1000:
+                lines[-1] += pending
+            else:
+                if not pending.strip():
+                    raise BusinessError("VERBATIM_WHITESPACE_TOO_LONG", "原文末尾空白超过单句限制，请整理后重新提交")
+                lines.append(pending)
+        if len(lines) > 5000:
+            packed = []
+            for text in lines:
+                if packed and len(packed[-1]) + len(text) <= 1000:
+                    packed[-1] += text
+                else:
+                    packed.append(text)
+            lines = packed
+        while len(lines) < len(roles):
+            index = max(range(len(lines)), key=lambda i: len(lines[i].strip()))
+            text = lines[index]
+            cuts = [i for i in range(1, len(text)) if text[:i].strip() and text[i:].strip()]
+            if not cuts:
+                raise BusinessError("SOURCE_TOO_SHORT", "原文不足以分配给所有主持人")
+            cut = min(cuts, key=lambda i: abs(i - len(text) // 2))
+            lines[index:index + 1] = [text[:cut], text[cut:]]
+        return GeneratedScript(title=source.strip()[:40], summary="原文朗读，内容逐字保留。",
+            sentences=[{"role_key": roles[i % len(roles)]["role_key"], "text": text}
+                       for i, text in enumerate(lines)])
+
+
 def script_generator_for_snapshot(snapshot: dict, on_progress=None) -> ScriptGenerator:
+    if snapshot.get("generation_mode") == "verbatim":
+        return VerbatimScriptGenerator()
     config = snapshot.get("llm_config", {"provider": "mock"})
     if config["provider"] == "local_http":
-        if len(snapshot.get("source_text", "")) > DIRECT_SOURCE_MAX_CHARACTERS:
+        if snapshot.get("generation_mode") == "summary" or len(snapshot.get("source_text", "")) > DIRECT_SOURCE_MAX_CHARACTERS:
             return CoherentLongDocumentScriptGenerator(config, on_progress)
         return LocalLLMScriptGenerator(config)
     if config["provider"] == "mock":

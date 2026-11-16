@@ -27,6 +27,8 @@ class EngineInfo:
     availability_reason: str | None = None
     max_text_length: int = 1000
     model_revision: str | None = None
+    model_id: str | None = None
+    backend: str | None = None
 
 
 @dataclass(frozen=True)

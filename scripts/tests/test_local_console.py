@@ -72,10 +72,40 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(self.control.snapshot()["jobs"][0]["status"], "failed")
         self.assertEqual(self.control.snapshot()["jobs"][0]["exit_code"], 7)
 
+    def test_live_output_is_readable_before_subprocess_exit(self):
+        import time
+        item = self.control.job("test", [sys.executable, "-c", "import time; print('live-output'); time.sleep(30)"],
+                                self.folder, {**os.environ, "PYTHONUNBUFFERED": "0"})
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and "live-output" not in self.control.log(item["id"]):
+            time.sleep(0.05)
+        self.assertIn("live-output", self.control.log(item["id"]))
+        self.assertIsNone(item["process"].poll())
+
+    def test_hardware_detection_is_nonblocking_and_cached(self):
+        started, release = threading.Event(), threading.Event()
+        def collect(*_args):
+            started.set()
+            release.wait(timeout=3)
+            return {"cpu": {"name": "test"}}
+        with patch.object(console, "collect_hardware", side_effect=collect) as probe:
+            self.assertEqual(self.control.hardware()["status"], "detecting")
+            self.assertTrue(started.wait(timeout=1))
+            self.assertEqual(self.control.hardware(refresh=True)["status"], "detecting")
+            release.set()
+            import time
+            for _ in range(100):
+                if not self.control.hardware_detecting: break
+                time.sleep(0.01)
+            self.assertEqual(self.control.hardware(refresh=True)["status"], "ready")
+            probe.assert_called_once()
+
     def test_settings_validation(self):
         for values in ({"PATH": "/tmp"}, {"LLM_DEVICE": "shell"}, {"PODCAST_LLM_PYTHON": "relative"}, {"LLM_DEVICE": []}):
             with self.assertRaises(ValueError):
                 self.control.settings(values)
+        self.control.settings({"TTS_MODEL_SIZE": "", "TTS_QWEN_BACKEND": ""})
+        self.assertEqual(tasks.options()["TTS_QWEN_BACKEND"], "standard")
         self.control.settings({"LLM_DEVICE": "cpu"})
         self.assertEqual(tasks.options(), {"LLM_DEVICE": "cpu"})
 
@@ -115,6 +145,8 @@ class ConsoleTests(unittest.TestCase):
 
         try:
             self.assertEqual(request("/api/state")[0], 200)
+            with patch.object(self.control, "hardware", return_value={"status": "ready", "report": {"cpu": "test"}}):
+                self.assertEqual(json.loads(request("/api/hardware")[1])["status"], "ready")
             self.assertEqual(request("/", headers={"Host": "attacker.example"})[0], 403)
             self.assertEqual(request("/api/stop", {})[0], 403)
             self.assertEqual(request("/api/stop", {}, {"Origin": "http://evil.example", "X-Console-Token": server.token})[0], 403)

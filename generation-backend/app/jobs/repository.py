@@ -122,10 +122,16 @@ def submit(session, user_id, project_id, task_type, body, key, settings):
         return accepted(task), 202
 
 
-def claim(database, settings):
+def claim(database, settings, task_types=None):
+    """Atomically claim the oldest queued task, optionally from selected queues."""
+    allowed = tuple(task_types) if task_types is not None else None
+    if allowed is not None and not allowed:
+        return None
     with database.sessions() as session, transaction(session):
-        task = session.scalar(select(Task).where(Task.status == "queued").order_by(Task.created_at, Task.id)
-                              .limit(1).with_for_update(skip_locked=True))
+        query = select(Task).where(Task.status == "queued")
+        if allowed is not None:
+            query = query.where(Task.task_type.in_(allowed))
+        task = session.scalar(query.order_by(Task.created_at, Task.id).limit(1).with_for_update(skip_locked=True))
         if task is None:
             return None
         token = new_token()

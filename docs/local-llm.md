@@ -87,7 +87,7 @@ LOCAL_LLM_MAX_NEW_TOKENS=1536
 conda run --no-capture-output -n podcast-backend python -m app.bootstrap
 ```
 
-分别启动（或重启）业务 API 和 Worker：
+分别启动（或重启）业务 API、脚本 Worker 与音频 Worker：
 
 ```bash
 conda run --no-capture-output -n podcast-backend python -m uvicorn app.main:app \
@@ -95,7 +95,11 @@ conda run --no-capture-output -n podcast-backend python -m uvicorn app.main:app 
 ```
 
 ```bash
-conda run --no-capture-output -n podcast-backend python -m app.worker
+conda run --no-capture-output -n podcast-backend python -m app.worker --queue script
+```
+
+```bash
+conda run --no-capture-output -n podcast-backend python -m app.worker --queue audio
 ```
 
 `Settings()` 的代码默认保留 Mock；部署示例 `.env.example` 已选择真实 Qwen。

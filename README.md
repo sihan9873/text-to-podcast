@@ -77,10 +77,17 @@ $env:TEXTCAST_AUTH_URL='http://127.0.0.1:8000'
 ```
 
 ```powershell
-# 窗口 3：生成 Worker
+# 窗口 3：脚本 Worker
 cd generation-backend
 $env:TEXTCAST_AUTH_URL='http://127.0.0.1:8000'
-.\.venv\Scripts\python.exe -m app.worker
+.\.venv\Scripts\python.exe -m app.worker --queue script
+```
+
+```powershell
+# 窗口 4：音频与声音试听 Worker
+cd generation-backend
+$env:TEXTCAST_AUTH_URL='http://127.0.0.1:8000'
+.\.venv\Scripts\python.exe -m app.worker --queue audio
 ```
 
 前端连接真实服务时创建 `frontend/.env.local`：

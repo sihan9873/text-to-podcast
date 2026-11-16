@@ -30,12 +30,15 @@ python -m venv .venv
 
 ```powershell
 cd text-to-podcast-backend
-.\.venv\Scripts\python.exe -m app.worker
+.\.venv\Scripts\python.exe -m app.worker --queue script
+.\.venv\Scripts\python.exe -m app.worker --queue audio
 ```
+
+脚本与音频 Worker 使用同一数据库但只领取各自队列。这样一个项目进行耗时 TTS 时，另一项目的脚本任务仍可执行；音频与声音试听继续由单一 audio Worker 串行处理，避免模型并发占用显存。兼容旧部署时可继续使用 `python -m app.worker`，它会按原方式串行处理全部任务。
 
 浏览器打开 <http://127.0.0.1:8000/docs> 查看当前已实现接口；<http://127.0.0.1:8000/openapi.json> 可导入 Apifox。Swagger UI 的静态资源需要联网加载，接口本身不依赖外网。
 
-只有 API 启动时可以提交、查询任务，但任务会排队，必须启动 Worker 才会执行。初期建议一个 Worker 进程；每个 Worker 顺序执行任务。
+只有 API 启动时可以提交、查询任务，但任务会排队，必须启动 Worker 才会执行。建议各启动一个 script 与 audio Worker；每条队列内部保持顺序执行。
 
 ## 已实现接口
 

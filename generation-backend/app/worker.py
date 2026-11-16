@@ -1,4 +1,5 @@
 """启动：python -m app.worker。独立进程扫描数据库，不依赖 Redis。"""
+import argparse
 import logging
 from copy import deepcopy
 from threading import Event, Thread
@@ -18,11 +19,12 @@ logger = logging.getLogger(__name__)
 
 
 class Worker:
-    def __init__(self, database, settings, script_generator=None, audio_generator=None):
+    def __init__(self, database, settings, script_generator=None, audio_generator=None, task_types=None):
         self.database, self.settings = database, settings
         self.storage = LocalStorage(settings.storage_dir)
         self.script_generator = script_generator
         self.audio_generator = audio_generator
+        self.task_types = tuple(task_types) if task_types is not None else None
 
     def renew(self, job, stopped):
         while not stopped.wait(max(1, self.settings.lease_seconds / 3)):
@@ -33,7 +35,7 @@ class Worker:
 
     def run_once(self):
         repository.recover_expired(self.database)
-        job = repository.claim(self.database, self.settings)
+        job = repository.claim(self.database, self.settings, self.task_types)
         if job is None:
             return False
         stopped = Event()
@@ -73,7 +75,7 @@ class Worker:
 
     def run_forever(self):
         stopped = Event()
-        logger.info("Database worker started")
+        logger.info("Database worker started: task_types=%s", self.task_types or "all")
         try:
             while True:
                 try:
@@ -87,11 +89,16 @@ class Worker:
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--queue", choices=("all", "script", "audio"), default="all",
+                        help="all keeps the legacy serial worker; audio also handles voice previews")
+    args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     settings = Settings.from_env()
     database = Database(settings.database_url)
+    queues = {"all": None, "script": ("script",), "audio": ("audio", "voice_preview")}
     try:
-        Worker(database, settings).run_forever()
+        Worker(database, settings, task_types=queues[args.queue]).run_forever()
     finally:
         database.engine.dispose()
 

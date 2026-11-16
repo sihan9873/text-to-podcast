@@ -56,10 +56,11 @@ TTS 配置由进程环境读取。使用 shell 导出，或在本机配置文件
 # backend/
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
-# generation-backend/：先迁移，再分别开 API 和 Worker 两个终端
+# generation-backend/：先迁移，再分别启动 API、脚本 Worker 和音频 Worker
 python -m app.bootstrap
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
-python -m app.worker
+python -m app.worker --queue script
+python -m app.worker --queue audio
 
 # tts/，显式导出上述环境变量后
 python -m uvicorn tts_service.configured:configured_app --factory --host 127.0.0.1 --port 8002

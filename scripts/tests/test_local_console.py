@@ -55,6 +55,15 @@ class ConsoleTests(unittest.TestCase):
         stop.assert_called_once()
         start.assert_called_once_with("mock", resume=folder)
 
+    def test_service_definitions_split_script_and_audio_workers(self):
+        definitions = {name: (module, args) for name, module, args in console.service_definitions("customvoice")}
+        self.assertEqual(definitions["worker-script"],
+                         ("generation-backend", ["-m", "app.worker", "--queue", "script"]))
+        self.assertEqual(definitions["worker-audio"],
+                         ("generation-backend", ["-m", "app.worker", "--queue", "audio"]))
+        self.assertIn("tts", definitions)
+        self.assertIn("llm", definitions)
+
     def test_resume_rejects_external_directories(self):
         with self.assertRaisesRegex(ValueError, "隔离测试目录"), patch.object(console.socket.socket, "bind"):
             self.control.start("mock", resume=self.folder.parent)

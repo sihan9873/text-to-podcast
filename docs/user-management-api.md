@@ -181,3 +181,68 @@ def admin_endpoint(admin = Depends(require_admin)):
 - 普通用户：`demo / TextCast123!`
 
 Mock 密码不属于正式系统账号。关闭 Mock 后必须使用数据库中的真实账户。
+
+## 前端正式模式
+
+前端新增统一账号适配层 `frontend/src/api/auth.ts`，兼容正式后端的 camelCase 用户字段（`id`、`displayName`、`createdAt`、`expiresAt`）和前端使用的 snake_case 会话字段（`user_id`、`display_name`、`created_at`、`expires_at`）。
+
+连接正式后端：
+
+```env
+# frontend/.env.local
+VITE_ENABLE_MOCK=false
+```
+
+关闭 Mock 后：
+
+- 注册、登录、退出、`/api/auth/me` 走 8000；
+- 登录成功后 Cookie `textcast_session` 由浏览器保存；
+- 前端通过 `authApi.updateMyProfile()` 修改昵称；
+- 前端通过 `authApi.changePassword()` 修改密码；
+- 个人中心页面路径为 `/profile`。
+
+个人中心使用已有接口：
+
+```http
+PATCH /api/auth/me
+{ "displayName": "新昵称" }
+
+POST /api/auth/change-password
+{ "currentPassword": "旧密码", "newPassword": "新密码" }
+```
+
+### 当前边界
+
+- 注册由 `TEXTCAST_ALLOW_REGISTRATION` 控制，本地联调默认开启；对外部署是否开放需单独确认。关闭时后端仍必须校验开关，前端入口的隐藏/禁用尚未实现。
+- 注册成功后前端调用退出接口，确认清理会话后再跳转登录；清理失败不会按已退出处理。
+- 前端会读取 `csrf_token` 并在写请求中发送 `X-CSRF-Token`；**后端当前没有签发/校验 CSRF token，不能视为已实现 CSRF 防护**。按确认答复，CSRF 作为待完成项单独验收。
+- 联调统一使用 `localhost` 或统一使用 `127.0.0.1`，不要混用，避免 Cookie 域不一致。
+- 账号库默认 `backend/data/textcast.db`；生成库默认 `generation-backend/data/backend.sqlite3`。联调使用独立测试库，不直接清空已有业务库。
+
+## 数据隔离联调
+
+项目、原文、脚本、任务和音频统一由 `generation-backend` 管理，并按 `user_id` 查询。真实联调时，**生成 API** 必须设置：
+
+```powershell
+$env:TEXTCAST_AUTH_URL='http://127.0.0.1:8000'
+```
+
+生成 API 会携带当前 Cookie 调用 `/api/auth/me`，把正式账号 UUID 映射为本地 `users.id`。
+
+本地单机开发如确实要使用固定开发用户，必须显式开启：
+
+```powershell
+$env:TEXTCAST_ALLOW_DEVELOPMENT_USER='true'
+```
+
+**未设置 `TEXTCAST_AUTH_URL` 且未显式开启开发用户时，生成 API 返回 `503 AUTH_NOT_CONFIGURED`，不会静默退回 `development_user_id=1`。**
+
+Worker 不处理 HTTP 请求，不需要 `TEXTCAST_AUTH_URL`；它应连接同一个生成数据库，按任务记录中的 `user_id` 和输入快照执行，并把结果写回原任务和项目。
+
+联调验收步骤：
+
+1. 管理员创建用户 A、B；
+2. A 登录后创建项目；
+3. B 登录后访问 A 的 `project_id`、`script_id`、`asset_id`；
+4. 期望全部返回 `404 RESOURCE_NOT_FOUND`，不能返回资源内容；
+5. 在数据库中确认项目、脚本、音频的 `user_id` 分别对应 A、B。

@@ -139,7 +139,8 @@ export default function AuthPage() {
           password,
           display_name: displayName.trim() || undefined,
         })
-        // 注册不自动登录，切到登录模式
+        // 正式后端注册会顺手签发会话；这里清掉，保持“注册后手动登录”的产品约定。
+        await authApi.logout()
         switchMode("login")
         setPassword('')
         setNotice("注册成功，请登录")

@@ -23,7 +23,11 @@ from app.worker import Worker
 
 @pytest.fixture
 def env(tmp_path):
-    settings = Settings(database_url=f"sqlite:///{(tmp_path / 'test.sqlite3').as_posix()}", storage_dir=tmp_path / "assets")
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'test.sqlite3').as_posix()}",
+        storage_dir=tmp_path / "assets",
+        allow_development_user=True,
+    )
     initialize(settings)
     app = create_app(settings)
     worker = Worker(app.state.database, settings, mock.MockScriptGenerator(0), mock.MockAudioGenerator(0))
@@ -268,7 +272,8 @@ def test_other_user_resources_are_hidden(env):
         session.flush()
         other = other_user.id
     other_app = create_app(Settings(database_url=env.settings.database_url,
-        storage_dir=env.settings.storage_dir, development_user_id=other))
+        storage_dir=env.settings.storage_dir, development_user_id=other,
+        allow_development_user=True))
     with TestClient(other_app) as client:
         pid = client.post("/api/v1/projects", json={"title": "private"}).json()["data"]["project_id"]
         assert client.put(f"/api/v1/projects/{pid}/source", json={"text": "private source"}).status_code == 200

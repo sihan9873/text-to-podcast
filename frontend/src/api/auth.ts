@@ -1,35 +1,161 @@
-import { http, setCsrfToken } from './client';
+import { ApiError, setCsrfToken } from './client';
 import type {
   LoginRequest,
   LogoutResponse,
   RegisterRequest,
   RegisterResponse,
   SessionResponse,
+  UserInfo,
 } from './types';
 
+type JsonObject = Record<string, unknown>;
+
+function isObject(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function invalidResponse(): never {
+  throw new ApiError('INVALID_RESPONSE', '账号服务响应格式不正确', 502);
+}
+
+function normalizeUser(value: unknown): UserInfo {
+  if (!isObject(value)) invalidResponse();
+  const userId = value.user_id ?? value.id;
+  const displayName = value.display_name ?? value.displayName ?? null;
+  const createdAt = value.created_at ?? value.createdAt;
+  const role = value.role;
+  if (
+    (typeof userId !== 'string' && typeof userId !== 'number')
+    || typeof value.username !== 'string'
+    || (displayName !== null && typeof displayName !== 'string')
+    || (value.status !== 'active' && value.status !== 'disabled')
+    || typeof createdAt !== 'string'
+  ) invalidResponse();
+  return {
+    user_id: String(userId),
+    username: value.username,
+    display_name: displayName,
+    status: value.status,
+    created_at: createdAt,
+    role: role === 'admin' || role === 'user' ? role : 'user',
+    last_login_at:
+      typeof value.last_login_at === 'string'
+        ? value.last_login_at
+        : typeof value.lastLoginAt === 'string'
+          ? value.lastLoginAt
+          : null,
+  };
+}
+
+function normalizeSession(value: unknown): SessionResponse {
+  if (!isObject(value) || !('user' in value)) invalidResponse();
+  const expiresAt = value.expires_at ?? value.expiresAt ?? null;
+  const csrfToken = value.csrf_token ?? null;
+  if (expiresAt !== null && typeof expiresAt !== 'string') invalidResponse();
+  if (csrfToken !== null && typeof csrfToken !== 'string') invalidResponse();
+  return {
+    user: normalizeUser(value.user),
+    expires_at: expiresAt,
+    csrf_token: csrfToken,
+  };
+}
+
+/**
+ * The formal account service (`/api/auth/*`) returns raw JSON, while the
+ * business API (`/api/v1/*`) uses the `{code,message,data}` envelope.
+ * Keep auth handling in one adapter so both shapes work during the migration.
+ */
+async function authRequest(
+  path: string,
+  method = 'GET',
+  body?: unknown,
+): Promise<unknown> {
+  const options: RequestInit = {
+    method,
+    credentials: 'include',
+  };
+  if (body !== undefined) {
+    options.headers = { 'Content-Type': 'application/json' };
+    options.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(`/api/auth${path}`, options);
+  const text = await response.text();
+  let payload: unknown = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      throw new ApiError('INVALID_RESPONSE', '账号服务未返回有效 JSON', response.status);
+    }
+  }
+
+  const envelope =
+    isObject(payload) && typeof payload.code === 'string' && 'data' in payload;
+  const code = isObject(payload) && typeof payload.code === 'string' ? payload.code : null;
+  if (!response.ok || (envelope && code !== 'OK')) {
+    const normalizedCode =
+      code === 'AUTH_REQUIRED' ? 'UNAUTHENTICATED' : (code ?? 'INTERNAL_ERROR');
+    const message =
+      isObject(payload) && typeof payload.message === 'string'
+        ? payload.message
+        : response.statusText || '请求失败';
+    const requestId =
+      isObject(payload) && typeof payload.request_id === 'string'
+        ? payload.request_id
+        : (response.headers.get('X-Request-ID') ?? undefined);
+    throw new ApiError(normalizedCode, message, response.status, requestId);
+  }
+
+  return envelope ? (payload as JsonObject).data : payload;
+}
+
 export const authApi = {
-  /** U-01 注册 */
-  register: (body: RegisterRequest) =>
-    http.post<RegisterResponse>('/auth/register', body),
+  async register(body: RegisterRequest): Promise<RegisterResponse> {
+    const data = await authRequest('/register', 'POST', {
+      username: body.username,
+      password: body.password,
+      displayName: body.display_name?.trim() || body.username,
+    });
+    if (isObject(data) && 'user' in data) return normalizeUser(data.user);
+    return normalizeUser(data);
+  },
 
-  /** U-02 登录（成功后缓存 csrf_token） */
   async login(body: LoginRequest): Promise<SessionResponse> {
-    const data = await http.post<SessionResponse>('/auth/login', body);
+    const data = normalizeSession(await authRequest('/login', 'POST', body));
     setCsrfToken(data.csrf_token);
     return data;
   },
 
-  /** U-03 当前用户（可用于刷新 csrf_token） */
   async me(): Promise<SessionResponse> {
-    const data = await http.get<SessionResponse>('/auth/me');
+    const data = normalizeSession(await authRequest('/me'));
     setCsrfToken(data.csrf_token);
     return data;
   },
 
-  /** U-04 退出 */
   async logout(): Promise<LogoutResponse> {
-    const data = await http.post<LogoutResponse>('/auth/logout');
+    await authRequest('/logout', 'POST');
     setCsrfToken(null);
+    return { logged_out: true };
+  },
+
+  async updateMyProfile(displayName: string): Promise<UserInfo> {
+    const data = await authRequest('/me', 'PATCH', { displayName });
+    if (isObject(data) && 'user' in data) return normalizeUser(data.user);
+    return normalizeUser(data);
+  },
+
+  async changePassword(
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<SessionResponse> {
+    const data = normalizeSession(
+      await authRequest('/change-password', 'POST', {
+        currentPassword,
+        newPassword,
+      }),
+    );
+    setCsrfToken(data.csrf_token);
     return data;
   },
 };

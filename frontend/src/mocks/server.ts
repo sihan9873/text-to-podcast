@@ -97,7 +97,7 @@ export async function dispatch(request: Request): Promise<Response> {
       if (!project.source_submitted) return fail('请先提交原文', 409);
       const selected = (body as unknown as GenerateScriptRequest).roles;
       if (!selected?.length || selected.some(r => !roles.some(p => p.profile_id === r.profile_id))) return fail('请选择有效角色');
-      return accept(queue(key, { task_type: 'script' }, task => { const script = makeScript(project, selected); task.script_id = script.script_id; task.result = { script_id: script.script_id }; }));
+      return accept(queue(key, { task_type: 'script' }, task => { const script = makeScript(project, selected, String(body.generation_mode ?? "prompt")); task.script_id = script.script_id; task.result = { script_id: script.script_id }; }));
     }
     if (action === 'audio') {
       const script = scripts.find(s => s.script_id === body.script_id && s.project_id === key); if (!script) return fail('脚本不存在', 404);

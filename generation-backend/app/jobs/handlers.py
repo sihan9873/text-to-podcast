@@ -32,7 +32,7 @@ def publish_script(database, job, generated):
     keys = {r["role_key"] for r in roles}
     if (any(not line.text.strip() or line.role_key not in keys for line in generated.sentences)
         or {line.role_key for line in generated.sentences} != keys
-        or sum(len(line.text) for line in generated.sentences) > 5000):
+        or sum(len(line.text) for line in generated.sentences) > (100000 if job["snapshot"].get("generation_mode") == "verbatim" else 5000)):
         raise BusinessError("LLM_INVALID_RESPONSE", "生成结果不满足台词、角色或长度约束")
     with database.sessions() as session, transaction(session):
         task, project = locked_task(session, job)

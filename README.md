@@ -111,3 +111,9 @@ LLM/TTS 的模型准备、独立环境和启动方式见 [`docs/local-llm.md`](d
 - `feat/backend-tts-integration` 保留为历史参考；其 `llm/`、`tts/` 源码与本基线一致，不再整包合并以免覆盖账号后端。
 
 协作约定见 [`CONTRIBUTING.md`](CONTRIBUTING.md)，原始需求见 [`docs/文字转播客生成系统_产品需求规格说明书.docx`](docs/文字转播客生成系统_产品需求规格说明书.docx)。
+
+## 脚本模式与双主持人
+
+生成弹窗支持“提示词创作 / 保留原文 / 长文概括”、0.5B / 4B 模型选择，以及预设主持人 A/B 单人或双人播报。更新与模型下载步骤见 [脚本模式说明](docs/script-generation-modes.md)。
+
+TTS 现支持 0.6B / 1.7B CustomVoice 与可选 CUDA Graph 加速后端；控制台提供硬件检测、模型规格和后端选择。安装与实测数据见 [TTS 性能升级](docs/tts-performance-upgrade.md)。

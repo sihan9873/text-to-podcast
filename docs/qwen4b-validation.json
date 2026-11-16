@@ -1,0 +1,36 @@
+{
+  "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+  "simulated": false,
+  "script": {
+    "title": "太阳为什么会发光",
+    "summary": "用简单易懂的方式解释太阳发光的原理，通过核聚变过程说明能量来源，帮助听众理解太阳如何持续释放光和热。",
+    "sentences": [
+      {
+        "role_key": "host_a",
+        "text": "太阳为什么会发光呢？"
+      },
+      {
+        "role_key": "host_b",
+        "text": "因为太阳内部的氢原子在高温高压下发生核聚变，融合成氦，这个过程会释放出巨大的能量，就是我们看到的光和热。"
+      }
+    ]
+  },
+  "elapsed_seconds": 21.42,
+  "validated_at": "2026-11-16",
+  "revision": "cdbee75f17c01a7cc42f958dc650907174af0554",
+  "download_bytes": 8060915998,
+  "device": "NVIDIA GeForce RTX 5060 Ti / CUDA / bfloat16",
+  "checks": {
+    "frontend_tests": 32,
+    "generation_backend_tests": 62,
+    "llm_tests": 8,
+    "tts_unittest_passed": 29,
+    "tts_real_integration_skipped": 1,
+    "console_tests": 8,
+    "frontend_build": "passed",
+    "generation_backend_additional_boundary_test": "passed: 100000 characters / 50000 short sentences"
+  },
+  "limitations": [
+    "本次真实推理覆盖双主持人短脚本；长文本质量及真实语音音质未专项验收。"
+  ]
+}

@@ -1,6 +1,7 @@
 """Uvicorn factory: 通过环境变量显式启用 Qwen，保留默认 Mock 启动方式。"""
 
 import os
+import logging
 import threading
 
 from .app import DEFAULT_ALIASES, create_app
@@ -9,6 +10,7 @@ from .qwen import Qwen3Engine, QwenConfig
 
 
 def configured_app():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     engines = {"mock": MockEngine()}
     aliases = {key: dict(value) for key, value in DEFAULT_ALIASES.items()}
     enabled = os.environ.get("TTS_ENABLE_QWEN", "0")

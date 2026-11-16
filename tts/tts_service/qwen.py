@@ -5,6 +5,8 @@ import importlib.util
 import io
 import json
 import math
+import logging
+import time
 import os
 from pathlib import Path
 import re
@@ -13,6 +15,8 @@ import threading
 import wave
 
 from .engine import AudioResult, EngineError, EngineInfo
+
+logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,10 +30,18 @@ class QwenConfig:
     language: str = "Chinese"
     max_new_tokens: int = 1024
     max_text_chars: int = 120
+    backend: str = "standard"
+    attention: str = "sdpa"
 
     def __post_init__(self):
         if not re.fullmatch(r"cpu|cuda:[0-9]+", self.device):
             raise ValueError("TTS_QWEN_DEVICE 仅支持 cpu 或 cuda:N")
+        if self.backend not in ("standard", "faster"):
+            raise ValueError("TTS_QWEN_BACKEND 必须为 standard 或 faster")
+        if self.backend == "faster" and not self.device.startswith("cuda:"):
+            raise ValueError("faster 后端需要 CUDA")
+        if self.attention not in ("sdpa", "eager", "flash_attention_2"):
+            raise ValueError("TTS_QWEN_ATTN 无效")
         if self.dtype not in ("float32", "float16", "bfloat16"):
             raise ValueError("TTS_QWEN_DTYPE 无效")
         if self.device == "cpu" and self.dtype != "float32":
@@ -50,6 +62,8 @@ class QwenConfig:
             cache_dir=path("TTS_QWEN_CACHE_DIR", "models/hf-cache"),
             max_new_tokens=int(os.environ.get("TTS_QWEN_MAX_NEW_TOKENS", "1024")),
             max_text_chars=int(os.environ.get("TTS_QWEN_MAX_TEXT_CHARS", "120")),
+            backend=os.environ.get("TTS_QWEN_BACKEND", "standard"),
+            attention=os.environ.get("TTS_QWEN_ATTN", "sdpa"),
         )
 
 
@@ -86,7 +100,7 @@ class Qwen3Engine:
     def _local_config(self):
         try:
             config = json.loads((self.config.model_path / "config.json").read_text())
-            if config.get("tts_model_type") != "custom_voice" or config.get("tts_model_size") != "0b6":
+            if config.get("tts_model_type") != "custom_voice" or config.get("tts_model_size") not in ("0b6", "1b7"):
                 return None
             speakers = config.get("talker_config", {}).get("spk_id", {})
             if not isinstance(speakers, dict) or not all(isinstance(key, str) and key for key in speakers):
@@ -98,8 +112,12 @@ class Qwen3Engine:
     def _availability(self):
         if not all(importlib.util.find_spec(name) is not None for name in ("torch", "qwen_tts")):
             return "缺少 Qwen SDK / PyTorch；请使用既有 podcast-tts 环境。"
+        if self.config.backend == "faster" and importlib.util.find_spec("faster_qwen3_tts") is None:
+            return "缺少 faster-qwen3-tts；请选择独立加速环境或切回 standard 后端。"
+        if self.config.attention == "flash_attention_2" and importlib.util.find_spec("flash_attn") is None:
+            return "未安装 FlashAttention 2；请选择 sdpa。"
         if self._local_config() is None:
-            return "缺少有效的 0.6B CustomVoice 配置；Base 权重不适用。"
+            return "缺少有效的 0.6B/1.7B CustomVoice 配置；Base 权重不适用。"
         required = ("model.safetensors", "generation_config.json", "preprocessor_config.json", "tokenizer_config.json",
                     "vocab.json", "merges.txt", "speech_tokenizer/config.json", "speech_tokenizer/model.safetensors")
         if not all((self.config.model_path / name).is_file() and (self.config.model_path / name).stat().st_size > 0 for name in required):
@@ -112,7 +130,8 @@ class Qwen3Engine:
         reason = self._availability()
         return EngineInfo("qwen3-customvoice", reason is None, self._model is not None,
                           ("cpu", "cuda"), self.config.device, availability_reason=reason,
-                          max_text_length=self.config.max_text_chars)
+                          max_text_length=self.config.max_text_chars,
+                          model_id=self.config.model_path.name, backend=self.config.backend)
 
     def list_voices(self):
         config = self._local_config()
@@ -133,12 +152,19 @@ class Qwen3Engine:
             index = int(self.config.device.split(":")[1])
             if not torch.cuda.is_available() or index >= torch.cuda.device_count():
                 raise EngineError("unsupported_device", "指定 CUDA 设备不可用；请检查驱动、GPU 访问权限和进程环境。")
-        model = Qwen3TTSModel.from_pretrained(
-            str(self.config.model_path), device_map=self.config.device,
-            dtype=getattr(torch, self.config.dtype), attn_implementation="sdpa",
-            local_files_only=True, cache_dir=str(self.config.cache_dir),
-        )
-        if not set(self.list_voices()).issubset(set(model.get_supported_speakers() or [])):
+        if self.config.backend == "faster":
+            from faster_qwen3_tts import FasterQwen3TTS
+            model = FasterQwen3TTS.from_pretrained(str(self.config.model_path), device=self.config.device,
+                dtype=getattr(torch, self.config.dtype), attn_implementation=self.config.attention,
+                max_seq_len=2048, local_files_only=True, cache_dir=str(self.config.cache_dir))
+            speaker_model = model.model
+        else:
+            model = Qwen3TTSModel.from_pretrained(
+                str(self.config.model_path), device_map=self.config.device,
+                dtype=getattr(torch, self.config.dtype), attn_implementation=self.config.attention,
+                local_files_only=True, cache_dir=str(self.config.cache_dir))
+            speaker_model = model
+        if not set(self.list_voices()).issubset(set(speaker_model.get_supported_speakers() or [])):
             raise EngineError("model_load_failed", "实际模型音色与本地配置不一致。")
         return model
 
@@ -158,10 +184,16 @@ class Qwen3Engine:
                 if reason:
                     raise EngineError("engine_unavailable", reason)
                 self._model = self._load_model()
+            started = time.monotonic()
             wavs, sr = self._model.generate_custom_voice(
                 text=text, speaker=voice_id, language=self.config.language,
                 non_streaming_mode=True, max_new_tokens=self.config.max_new_tokens,
             )
+            elapsed = time.monotonic() - started
+            duration = len(wavs[0]) / sr
+            logger.info("TTS synthesis: model=%s backend=%s voice=%s characters=%s seconds=%.3f audio_seconds=%.3f rtf=%.3f",
+                        self.config.model_path.name, self.config.backend, voice_id, len(text), elapsed, duration,
+                        elapsed / duration if duration else 0)
             return _pcm_wav(wavs, sr, voice_id)
         except EngineError:
             raise

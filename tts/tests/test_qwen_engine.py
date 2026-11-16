@@ -29,6 +29,27 @@ class QwenTests(unittest.TestCase):
         self.assertEqual(self.engine.list_voices(), ["uncle_fu", "vivian"])
         self.assertFalse(self.engine.info().loaded)
 
+    def test_large_customvoice_and_fast_backend(self):
+        config = json.loads((self.path / "config.json").read_text())
+        config["tts_model_size"] = "1b7"
+        (self.path / "config.json").write_text(json.dumps(config))
+        engine = Qwen3Engine(QwenConfig(self.path, backend="faster"))
+        self.assertIsNotNone(engine._local_config())
+        torch, sdk, fast = Mock(), Mock(), Mock()
+        torch.cuda.is_available.return_value = True
+        torch.cuda.device_count.return_value = 1
+        accelerated = fast.FasterQwen3TTS.from_pretrained.return_value
+        accelerated.model.get_supported_speakers.return_value = ["vivian", "uncle_fu"]
+        with patch.dict("sys.modules", {"torch": torch, "qwen_tts": sdk, "faster_qwen3_tts": fast}), patch.dict(os.environ):
+            self.assertIs(engine._load_model(), accelerated)
+        sdk.Qwen3TTSModel.from_pretrained.assert_not_called()
+        args = fast.FasterQwen3TTS.from_pretrained.call_args
+        self.assertEqual(args.kwargs["device"], "cuda:0")
+        self.assertTrue(args.kwargs["local_files_only"])
+        self.assertEqual(args.kwargs["max_seq_len"], 2048)
+        for changes in ({"backend": "unknown"}, {"backend": "faster", "device": "cpu", "dtype": "float32"}, {"attention": "unknown"}):
+            with self.assertRaises(ValueError): QwenConfig(self.path, **changes)
+
     def test_base_is_rejected(self):
         (self.path / "config.json").write_text('{"tts_model_type":"base"}')
         self.assertEqual(self.engine.list_voices(), [])

@@ -53,7 +53,7 @@ def submit(session, user_id, project_id, task_type, body, key, settings):
         script = None
         audio = None
         if task_type == "script":
-            model = session.get(LLMModel, project.llm_model_id)
+            model = session.get(LLMModel, body.model_id or project.llm_model_id)
             if model is None or not model.enabled:
                 raise BusinessError("MODEL_UNAVAILABLE", "项目模型不可用")
             snapshot["model"] = {"model_id": model.id, "provider_code": model.provider_code,
@@ -61,7 +61,17 @@ def submit(session, user_id, project_id, task_type, body, key, settings):
             snapshot["prompt"] = (SYSTEM_PROMPT if settings.llm_provider == "local_http"
                                   else "mock-script-v1：返回预置测试脚本，不调用真实模型")
             snapshot["llm_config"] = script_config(settings)
-            snapshot["simulated"] = settings.llm_provider == "mock"
+            if body.model_id is not None:
+                snapshot["llm_config"]["provider"] = model.provider_code
+                snapshot["llm_config"]["model_id"] = model.model_code
+            snapshot["prompt"] = SYSTEM_PROMPT if snapshot["llm_config"]["provider"] == "local_http" else snapshot["prompt"]
+            snapshot["simulated"] = snapshot["llm_config"]["provider"] == "mock"
+            snapshot["generation_mode"] = (body.generation_mode if "generation_mode" in body.model_fields_set
+                                           else "summary" if len(project.source_text) > 5000 else "prompt")
+            if snapshot["generation_mode"] == "prompt" and len(project.source_text) > 5000:
+                raise BusinessError("PROMPT_TOO_LONG", "提示词最多5000字符；长文本请选择概括模式", 422)
+            if body.generation_mode == "verbatim" and len(project.source_text.strip()) < len(body.roles):
+                raise BusinessError("SOURCE_TOO_SHORT", "原文字符数少于主持人数，请减少主持人", 422)
             snapshot["generation_preferences"] = {
                 "target_minutes": body.target_minutes,
                 "target_characters": min(5_000, body.target_minutes * 240),
@@ -83,6 +93,7 @@ def submit(session, user_id, project_id, task_type, body, key, settings):
             if script.status != "confirmed" or project.confirmed_script_id != script.id or script.confirmed_revision != script.edit_revision:
                 raise BusinessError("SCRIPT_NOT_CONFIRMED", "请先确认该脚本")
             snapshot["script"] = script_view(session, script)
+            snapshot["generation_mode"] = script.llm_snapshot.get("generation_mode", "prompt")
             from app.services.voices import prepare_clones
             snapshot["clone_references"] = prepare_clones(session, user_id, snapshot["script"], settings)
             snapshot["audio_config"] = audio_config(settings)
@@ -138,12 +149,15 @@ def heartbeat(database, task_id, token, settings):
             .values(heartbeat_at=now, lease_expires_at=now + timedelta(seconds=settings.lease_seconds)))
 
 
-def progress(database, task_id, token, stage, percent):
+def progress(database, task_id, token, stage, percent, completed_sentences=None):
     """Publish coarse pipeline progress without exposing model prompts or text."""
+    values = {"stage": stage, "progress": max(5, min(95, int(percent))), "updated_at": utcnow()}
+    if completed_sentences is not None:
+        values["completed_sentences"] = max(0, int(completed_sentences))
     with database.sessions() as session, transaction(session):
         changed = session.execute(update(Task).where(
             Task.id == task_id, Task.status == "running", Task.lease_token == token,
-        ).values(stage=stage, progress=max(5, min(95, int(percent))), updated_at=utcnow())).rowcount
+        ).values(**values)).rowcount
         return changed == 1
 
 

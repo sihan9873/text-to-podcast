@@ -73,3 +73,11 @@ R2 不运行通用短文/长文闭环，因为没有真实参考录音与声音�
 ![本地测试控制台](images/local-test-console.png)
 
 ![登录并刷新后的业务前端](images/projects-after-login.png)
+
+## 硬件检测与 TTS 加速
+
+控制台新增“硬件检测”卡片：异步读取 CPU、WSL/系统内存、磁盘、NVIDIA 显卡/显存/驱动，以及所选 TTS Python 环境中的 PyTorch、CUDA、SDK 和加速包。点击“检测 / 刷新硬件”更新，至少间隔 30 秒，可下载 JSON 报告；检测不会加载模型、下载依赖或修改机器配置。
+
+在“模型、设备和 Python 环境设置”中可以独立选择 TTS 模型规格（0.6B / 1.7B）和后端（standard / faster）。先完成运行中任务，停止服务、保存设置，再点击“重启当前服务（保留数据）”。首次使用 faster 前先停止服务并执行“安装独立 TTS 加速环境”。模型未准备时可用“下载 Qwen TTS 1.7B”按钮。
+
+faster 安装在 `tts/.venv-fast`，复用现有 TTS 环境的 PyTorch/SDK，仅额外固定安装 `faster-qwen3-tts==0.3.0`，不升级 LLM 或普通 TTS 环境。它需要 NVIDIA CUDA；首个请求需要图捕获预热。Base 克隆路径仍使用原有标准后端。模型与加速实测见 [TTS 升级说明](tts-performance-upgrade.md)。

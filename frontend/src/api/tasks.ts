@@ -16,7 +16,7 @@ export const tasksApi = {
 
 /**
  * 轮询任务直到终态（成功/失败）
- * 默认 2 秒间隔，符合文档建议。
+ * 默认 2 秒间隔，等待后端终态；页面等待时长不代表生成失败。
  */
 export async function pollTask(
   taskId: string,
@@ -27,7 +27,7 @@ export async function pollTask(
     signal?: AbortSignal;
   } = {},
 ): Promise<TaskDetail> {
-  const { intervalMs = 2000, timeoutMs = 10 * 60 * 1000, onUpdate, signal } = options;
+  const { intervalMs = 2000, timeoutMs = Number.POSITIVE_INFINITY, onUpdate, signal } = options;
   const start = Date.now();
 
   // eslint-disable-next-line no-constant-condition
@@ -39,7 +39,7 @@ export async function pollTask(
       return task;
     }
     if (Date.now() - start > timeoutMs) {
-      throw new Error('任务轮询超时');
+      throw new Error('等待任务状态超时，后台任务可能仍在运行，请查看音频版本或刷新状态，勿重复提交。');
     }
     await new Promise((r) => setTimeout(r, intervalMs));
   }

@@ -7,8 +7,7 @@ from urllib.request import Request as UpstreamRequest, urlopen
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from app.core.common import BusinessError
-from app.db.models import User, RoleProfile
-from app.db.seed import ROLE_ID
+from app.db.models import User
 
 from fastapi import Depends, Header, Request
 from sqlalchemy.orm import Session
@@ -47,21 +46,17 @@ def current_user(request: Request):
                 user = User(username=account_key)
                 session.add(user)
                 session.flush()
-                template = session.get(RoleProfile, ROLE_ID)
-                settings = request.app.state.settings
-                if settings.audio_provider != "local_http":
-                    session.add(RoleProfile(user_id=user.id, name="主持人",
-                        description="", voice_config=template.voice_config))
-                elif settings.tts_engine_id != "qwen3-base":
-                    session.add(RoleProfile(user_id=user.id, name="主持人", description="本地语音",
-                        voice_config={"tts_provider": "local_http", "tts_model": settings.tts_engine_id,
-                                      "voice_id": "host_a", "style": None, "speed": 1.0, "extra_params": {}}))
+                from app.db.seed import ensure_presenters
+                ensure_presenters(session, user.id, request.app.state.settings)
                 session.commit()
             except IntegrityError:
                 session.rollback()
                 user = session.scalar(lookup)
                 if user is None:
                     raise
+        from app.db.seed import ensure_presenters
+        ensure_presenters(session, user.id, request.app.state.settings)
+        session.commit()
         return user.id
 
 

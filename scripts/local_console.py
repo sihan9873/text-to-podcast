@@ -21,16 +21,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit
 from urllib.request import ProxyHandler, build_opener
 
-from local_tasks import DATA, MODES, OPTION_KEYS, ROOT, options, pnpm, prepare, python_for, tool_env
+from local_tasks import DATA, MODES, OPTION_KEYS, ROOT, options, pnpm, prepare, python_for, tool_env, tts_environment, tts_python
+from hardware import collect_hardware
 
 TASKS = {
+    "install-tts-fast": "安装独立 TTS 加速环境（联网）",
+    "download-customvoice-1.7b": "下载 Qwen TTS 1.7B（联网）",
     "preflight": "环境检查", "install": "安装缺失的独立开发环境（联网）",
     "health": "服务健康检查", "flow": "短文 HTTP 闭环", "long-flow": "长文 HTTP 闭环",
     "test-frontend": "前端完整检查", "test-backend": "账号测试",
     "test-generation-backend": "生成服务测试", "test-llm": "LLM 无模型测试", "test-tts": "TTS 无模型测试",
     "llm-demo": "LLM 单独生成测试", "tts-demo": "TTS 双声音试听",
     "verify-real-script": "真实 LLM 脚本闭环（不生成音频）",
-    "download-llm": "下载 LLM 模型（联网）", "download-customvoice": "下载 CustomVoice 模型（联网）", "download-base": "下载 Base 模型（联网）",
+    "download-llm": "下载 Qwen 0.5B（联网）", "download-llm-4b": "下载 Qwen 4B（联网）", "download-customvoice": "下载 CustomVoice 模型（联网）", "download-base": "下载 Base 模型（联网）",
 }
 
 
@@ -62,11 +65,15 @@ class Console:
         self.folder = None
         self.config = None
         self.closing = False
+        self.hardware_report = None
+        self.hardware_error = None
+        self.hardware_detecting = False
+        self.hardware_started = 0.0
 
     def spawn(self, command, cwd, env, log):
         log.parent.mkdir(parents=True, exist_ok=True)
         with log.open("ab") as output:
-            return subprocess.Popen(command, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT,
+            return subprocess.Popen(command, cwd=cwd, env={**env, "PYTHONUNBUFFERED": "1"}, stdout=output, stderr=subprocess.STDOUT,
                                     start_new_session=os.name != "nt")
 
     def busy(self):
@@ -97,6 +104,10 @@ class Console:
                 config = json.loads((folder / "config.json").read_text(encoding="utf-8"))
                 if config["mode"] != mode:
                     raise ValueError("恢复模式与保存配置不一致")
+            # Resume keeps projects and assets while applying explicit TTS preferences.
+            if resume is not None and any(k in options() for k in ("TTS_MODEL_SIZE", "TTS_QWEN_BACKEND")):
+                config["env"].update(tts_environment({**os.environ, **options()}))
+                (folder / "config.json").write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
             self.folder, self.config = folder, config
             if mode in MODES[2:]:
                 for key in ("LLM_MODEL_PATH", "TTS_QWEN_MODEL_PATH" if mode == "customvoice" else "TTS_QWEN_BASE_MODEL_PATH"):
@@ -132,7 +143,7 @@ class Console:
                 if mode in MODES[2:]:
                     definitions.append(("llm", "llm", ["-m", "uvicorn", "llm_service.app:app", "--host", "127.0.0.1", "--port", "8003"]))
                 for name, module, args in definitions:
-                    executable = python_for("tts-real" if name == "tts" and mode in MODES[2:] else module)
+                    executable = tts_python(config["env"]) if name == "tts" and mode == "customvoice" else python_for("tts-real" if name == "tts" and mode in MODES[2:] else module)
                     self.service(name, [executable, *args], ROOT / module, env, folder)
                 self.service("frontend", [*pnpm(), "dev", "--host", "127.0.0.1", "--port", "5173", "--strictPort"], ROOT / "frontend", env, folder)
             opener = build_opener(ProxyHandler({}))
@@ -204,7 +215,7 @@ class Console:
                 raise ValueError("LLM 单测需要启动真实模型模式")
             if action == "tts-demo" and self.config["mode"] == "mock":
                 raise ValueError("TTS 试听需要 HTTP Mock 或真实模型模式")
-            if (action == "install" or action.startswith("download-")) and any(p["process"].poll() is None for p in self.services.values()):
+            if (action in ("install", "install-tts-fast") or action.startswith("download-")) and any(p["process"].poll() is None for p in self.services.values()):
                 raise ValueError("安装依赖或下载模型前请停止服务")
             command = [sys.executable, str(ROOT / "scripts/local_tasks.py"), action]
             if self.folder:
@@ -235,6 +246,13 @@ class Console:
                 raise ValueError("请停止服务和任务后再保存设置")
             if not isinstance(values, dict) or values.keys() - OPTION_KEYS:
                 raise ValueError("未知设置字段")
+            for key, allowed in (("TTS_MODEL_SIZE", ("0.6b", "1.7b", "")), ("TTS_QWEN_BACKEND", ("standard", "faster", ""))):
+                if key in values and values[key] not in allowed:
+                    raise ValueError("TTS 模型规格或后端无效")
+            values = dict(values)
+            for key, default in (("TTS_MODEL_SIZE", "0.6b"), ("TTS_QWEN_BACKEND", "standard")):
+                if key in values and values[key] == "":
+                    values[key] = default
             for key, value in values.items():
                 if not isinstance(value, str) or len(value) > 1024 or any(c in value for c in "\r\n\x00"):
                     raise ValueError("设置值无效")
@@ -246,6 +264,29 @@ class Console:
             path = DATA / "settings.json"
             path.write_text(json.dumps({k: v for k, v in values.items() if v}, ensure_ascii=False, indent=2), encoding="utf-8")
             path.chmod(0o600)
+
+    def hardware(self, refresh=False):
+        with self.lock:
+            if not self.hardware_detecting and (self.hardware_started == 0 or
+                    (refresh and time.monotonic() - self.hardware_started >= 30)):
+                self.hardware_detecting = True
+                self.hardware_started = time.monotonic()
+                threading.Thread(target=self.detect_hardware, daemon=True).start()
+            return {"status": "detecting" if self.hardware_detecting else "error" if self.hardware_error else "ready",
+                    "report": self.hardware_report, "error": self.hardware_error}
+
+    def detect_hardware(self):
+        try:
+            settings = options()
+            report = collect_hardware(ROOT, tts_python(settings), settings.get("TTS_QWEN_BACKEND", "standard"))
+            with self.lock:
+                self.hardware_report, self.hardware_error = report, None
+        except Exception as exc:
+            with self.lock:
+                self.hardware_error = type(exc).__name__
+        finally:
+            with self.lock:
+                self.hardware_detecting = False
 
     def snapshot(self):
         with self.lock:
@@ -301,6 +342,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/":
                 page = (ROOT / "scripts/console/index.html").read_text(encoding="utf-8").replace("__TOKEN__", self.server.token)
                 return self.send(200, page.encode(), "text/html; charset=utf-8")
+            if path == "/api/hardware":
+                return self.send(200, self.server.console.hardware(refresh="refresh=1" in urlsplit(self.path).query))
             if path == "/api/state":
                 return self.send(200, self.server.console.snapshot())
             if path.startswith("/api/log/"):

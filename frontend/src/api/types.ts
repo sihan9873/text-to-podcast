@@ -274,6 +274,8 @@ export interface ScriptDetail {
 }
 
 export interface GenerateScriptRequest {
+  generation_mode?: "prompt" | "verbatim" | "summary";
+  model_id?: string;
   roles: { profile_id: string; role_key: string }[];
   target_minutes?: number;
   style?: string;

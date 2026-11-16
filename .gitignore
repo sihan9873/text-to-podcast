@@ -21,6 +21,7 @@ frontend/.env.*.local
 __pycache__/
 *.py[cod]
 .venv/
+.venv-fast/
 venv/
 .pytest_cache/
 backend/data/*.db

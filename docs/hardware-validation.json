@@ -1,0 +1,83 @@
+{
+  "checked_at": "2026-11-16T05:32:36.214232+00:00",
+  "os": "Linux",
+  "release": "6.18.58.1-microsoft-standard-WSL2",
+  "cpu": {
+    "name": "AMD Ryzen 7 5700X 8-Core Processor",
+    "logical_cores": 16
+  },
+  "memory": {
+    "total_bytes": 16712065024,
+    "available_bytes": 10924781568
+  },
+  "disk": {
+    "total_bytes": 1081101176832,
+    "free_bytes": 789759475712
+  },
+  "gpu": {
+    "available": true,
+    "devices": [
+      {
+        "index": "0",
+        "name": "NVIDIA GeForce RTX 5060 Ti",
+        "driver_version": "596.49",
+        "total_mib": 16311.0,
+        "free_mib": 14015.0,
+        "utilization_percent": 2.0
+      }
+    ]
+  },
+  "tts_backend": "faster",
+  "tts_python": "tts/.venv-fast/bin/python",
+  "runtime": {
+    "packages": {
+      "torch": {
+        "installed": true,
+        "version": "2.10.0+cu128"
+      },
+      "qwen-tts": {
+        "installed": true,
+        "version": "0.1.1"
+      },
+      "transformers": {
+        "installed": true,
+        "version": "4.57.3"
+      },
+      "faster-qwen3-tts": {
+        "installed": true,
+        "version": "0.3.0"
+      },
+      "flash-attn": {
+        "installed": false,
+        "version": null
+      }
+    },
+    "cuda_available": true,
+    "cuda_build": "12.8",
+    "torch_version": "2.10.0+cu128",
+    "cuda_architectures": [
+      "sm_70",
+      "sm_75",
+      "sm_80",
+      "sm_86",
+      "sm_90",
+      "sm_100",
+      "sm_120"
+    ],
+    "devices": [
+      {
+        "name": "NVIDIA GeForce RTX 5060 Ti",
+        "capability": [
+          12,
+          0
+        ],
+        "total_bytes": 17102864384
+      }
+    ]
+  },
+  "recommendations": [
+    "CUDA 可用。速度优先选 0.6B，质量升级可选 1.7B；更大的模型不等于更快。",
+    "已安装 CUDA Graph 加速包，可选择 faster 后端；首次图捕获较慢，比较速度请看预热后的 RTF。",
+    "运行于 WSL；显示的是当前 Linux/WSL 可用 CPU 和内存。"
+  ]
+}

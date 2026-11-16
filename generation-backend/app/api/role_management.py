@@ -39,7 +39,8 @@ def voice_items(session, user, settings):
     base = {"language": "Chinese", "styles": [], "default_style": None,
             "speed": {"supported": False, "min": 1.0, "max": 1.0, "default": 1.0}, "extra_parameter_schema": {}}
     if settings.audio_provider == "mock":
-        return [{**base, "voice_id": "test-tone", "name": "模拟测试音（非真人语音）", "tts_provider": "mock", "tts_model": "mock-audio-v1"}]
+        return [{**base, "voice_id": voice, "name": name, "tts_provider": "mock", "tts_model": "mock-audio-v1"}
+                for voice, name in (("test-tone", "模拟测试音（非真人语音）"), ("host_a", "测试主持人 A"), ("host_b", "测试主持人 B"))]
     engine_id = settings.tts_engine_id
     if engine_id == "qwen3-base":
         rows = session.execute(select(VoiceVersion, VoiceProfile).join(VoiceProfile).where(

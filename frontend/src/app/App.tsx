@@ -37,6 +37,7 @@ import { AppSidebar } from "@/components/layout/AppSidebar"
 import ProjectPage from "@/app/Project"
 import ScriptPage from "@/app/Script"
 import AudioPage from "@/app/Audio"
+import SentenceAudioPage from "@/app/SentenceAudioPage"
 import AuthPage from "@/app/Auth"
 
 import {
@@ -168,10 +169,15 @@ function breadcrumbsOf(pathname: string, projects: ProjectListItem[] = []) {
   const project = projects.find((item) => item.project_id === projectId)
   crumbs.push({ label: project?.title || "项目详情", href: projectHref })
   if (segments[2] === "scripts" && segments[3]) {
-    crumbs.push({ label: "脚本", href: `${projectHref}/scripts/${segments[3]}` })
-  }
-  if (segments.at(-1) === "audio") {
-    crumbs.push({ label: "音频", href: pathname })
+    const scriptHref = `${projectHref}/scripts/${segments[3]}`
+    crumbs.push({ label: "脚本", href: scriptHref })
+    if (segments[4] === "audio") {
+      const audioHref = `${scriptHref}/audio`
+      crumbs.push({ label: "音频", href: audioHref })
+      if (segments[5] && segments[6] === "sentences") {
+        crumbs.push({ label: "逐句试听", href: `${audioHref}/${segments[5]}/sentences` })
+      }
+    }
   }
   return crumbs
 }
@@ -352,6 +358,13 @@ function ScriptRoute() {
   return (
     <ScriptPage projectId={projectId} scriptId={scriptId} onNavigate={navigate} />
   )
+}
+
+function SentenceAudioRoute() {
+  const { projectId, scriptId, versionId } = useParams()
+  const navigate = useNavigate()
+  if (!projectId || !scriptId || !versionId) return <NotFound onNavigate={navigate} />
+  return <SentenceAudioPage key={versionId} projectId={projectId} scriptId={scriptId} versionId={versionId} onNavigate={navigate} />
 }
 
 function AudioRoute() {
@@ -803,6 +816,7 @@ export default function App() {
           path="projects/:projectId/scripts/:scriptId"
           element={<ScriptRoute />}
         />
+        <Route path="projects/:projectId/scripts/:scriptId/audio/:versionId/sentences" element={<SentenceAudioRoute />} />
         <Route
           path="projects/:projectId/scripts/:scriptId/audio"
           element={<AudioRoute />}

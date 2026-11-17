@@ -78,6 +78,7 @@ export interface LanguageDetection {
 }
 
 export interface TextAnalysis {
+  generation: ReturnType<typeof estimateGeneration>
   stats: TextStats
   language: LanguageDetection
   topic: Topic
@@ -192,6 +193,7 @@ export class TextProcessor {
 
   analyze(text: string, options: AnalyzeOptions = {}): TextAnalysis {
     return {
+      generation: estimateGeneration(text),
       stats: this.getStats(text),
       language: this.detectLanguage(text),
       topic: this.detectTopic(text),
@@ -397,6 +399,28 @@ export class TextProcessor {
       .map(([word, count]) => ({ word, count }))
       .sort((a, b) => b.count - a.count || a.word.localeCompare(b.word))
       .slice(0, topN)
+  }
+}
+
+/** Local planning heuristic, not a tokenizer or provider billing estimate.
+ * Assumes 800 prompt tokens, output at 1.2x text tokens, 20–60 output tokens/s.
+ * Audio uses text-token equivalents only; acoustic tokens depend on the TTS model.
+ */
+export function estimateGeneration(text: string) {
+  const chars = [...text.replace(/\s/gu, "")]
+  const textTokens = Math.ceil(chars.reduce((sum, char) => sum + (/\p{ASCII}/u.test(char) ? 0.3 : 1.5), 0))
+  const input = chars.length ? textTokens + 800 : 0
+  const output = Math.ceil(textTokens * 1.2)
+  const processor = new TextProcessor()
+  const stats = processor.getStats(text)
+  const speech = estimateSpeechDuration(stats.wordCount, processor.detectLanguage(text).language)
+  return {
+    characters: chars.length,
+    script: { inputTokens: input, outputTokens: output, totalTokens: input + output,
+      minSeconds: chars.length ? Math.ceil(5 + output / 60) : 0,
+      maxSeconds: chars.length ? Math.ceil(20 + output / 20) : 0 },
+    audio: { textTokens, minSeconds: chars.length ? Math.ceil(5 + speech * 0.1) : 0,
+      maxSeconds: chars.length ? Math.ceil(20 + speech * 0.5) : 0 },
   }
 }
 

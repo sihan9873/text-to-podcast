@@ -1,5 +1,7 @@
 // src/Script.tsx
 import * as React from "react"
+import { GenerationEstimate, useGenerationConfirmation } from "@/components/common/GenerationConfirmation"
+import { StatusBadge } from "@/components/common/StatusBadge"
 import { TextProcessor, LANGUAGE_LABELS, estimateScriptDuration } from '@/lib/textProcessor'
 import { RoleVoiceEditorDialog } from '@/components/audio/RoleVoiceEditorDialog'
 
@@ -27,6 +29,8 @@ import { RoleAvatar, roleTone } from "@/components/common/RoleAvatar"
 
 import {
   scriptsApi,
+  audioApi,
+  newIdempotencyKey,
   projectsApi,
 
   ApiError,
@@ -41,36 +45,6 @@ import {
 // ============================================================
 // Status badge
 // ============================================================
-
-function StatusBadge({ status }: { status: ScriptDetail["status"] }) {
-  const config: Record<
-    ScriptDetail["status"],
-    { label: string; className: string; dot: string }
-  > = {
-    draft: {
-      label: "草稿",
-      className: "bg-muted text-muted-foreground",
-      dot: "bg-muted-foreground/60",
-    },
-    confirmed: {
-      label: "已确认",
-      className: "bg-emerald-500/15 text-emerald-400",
-      dot: "bg-emerald-400",
-    },
-  }
-  const { label, className, dot } = config[status]
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium",
-        className,
-      )}
-    >
-      <span className={cn("size-1.5 rounded-full", dot)} />
-      {label}
-    </span>
-  )
-}
 
 // ============================================================
 // UI pieces
@@ -255,10 +229,34 @@ export default function ScriptPage({
   scriptId,
   onNavigate,
 }: ScriptPageProps) {
+  const generation = useGenerationConfirmation()
+  const audioBusy = React.useRef(false)
+  const [generatingAudio, setGeneratingAudio] = React.useState(false)
   const [script, setScript] = React.useState<ScriptDetail | null>(null)
   const [project, setProject] = React.useState<ProjectDetail | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+
+  const generateAudio = async () => {
+    if (!script || audioBusy.current) return
+    audioBusy.current = true
+    setGeneratingAudio(true)
+    try {
+      if (!await generation.confirm({ kind: "audio", text: script.sentences.map(s => s.text).join("\n"), title: script.title })) return
+      const accepted = await audioApi.generate(projectId, {
+        script_id: scriptId,
+        expected_script_version: script.version,
+        expected_edit_revision: script.edit_revision,
+      }, newIdempotencyKey())
+      const query = accepted.audio_version_id ? `?versionId=${encodeURIComponent(accepted.audio_version_id)}` : ""
+      onNavigate(`/projects/${projectId}/scripts/${scriptId}/audio${query}`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "生成音频失败")
+    } finally {
+      audioBusy.current = false
+      setGeneratingAudio(false)
+    }
+  }
 
   // 本地编辑态
   const [draftSentences, setDraftSentences] = React.useState<
@@ -505,6 +503,7 @@ export default function ScriptPage({
 
   return (
     <div className="mx-auto flex h-full min-h-0 w-full min-w-0 max-w-7xl flex-col gap-4 overflow-hidden">
+      {generation.dialog}
       {/* Header */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
@@ -614,6 +613,13 @@ export default function ScriptPage({
             >
               预估时长 约 {formatSeconds(scriptAnalysis.durationSeconds)}
             </StatChip>
+            <details className="w-full text-xs">
+              <summary className="cursor-pointer py-1 text-muted-foreground">生成 Token 与耗时估算</summary>
+              <div className="grid gap-2 py-2 sm:grid-cols-2">
+                <GenerationEstimate kind="script" title="基于原文生成脚本" text={project?.source_text ?? ""} />
+                <GenerationEstimate kind="audio" title="基于当前脚本生成音频" text={script.sentences.map(s => draftSentences[s.sentence_id] ?? s.text).join("\n")} />
+              </div>
+            </details>
           </div>
 
           <div
@@ -784,9 +790,8 @@ export default function ScriptPage({
 
           {script.status === "confirmed" && (
             <AppButton
-              onClick={() =>
-                onNavigate(`/projects/${projectId}/scripts/${scriptId}/audio`)
-              }
+              onClick={() => void generateAudio()}
+              disabled={generatingAudio}
             >
               生成音频
             </AppButton>

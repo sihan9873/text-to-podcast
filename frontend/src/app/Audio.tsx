@@ -1,21 +1,19 @@
+import { useGenerationConfirmation } from "@/components/common/GenerationConfirmation"
 // src/Audio.tsx
 import * as React from "react"
-import { RoleVoiceEditorDialog, type RoleDraft } from '@/components/audio/RoleVoiceEditorDialog'
+import { StatusBadge } from "@/components/common/StatusBadge"
+import { useSearchParams } from "react-router-dom"
+import { useQueryClient } from "@tanstack/react-query"
 import {
   Play,
-  Pause,
+  Mic,
   Download,
   RefreshCw,
-  Volume2,
   AlertCircle,
-  CheckCircle2,
   Loader2,
-  Mic,
   FileAudio,
   FileText,
   Clock,
-  ThumbsUp,
-  RotateCcw,
   ChevronRight,
   ArrowLeft,
   HardDrive,
@@ -25,8 +23,9 @@ import {
 
 import { cn } from "@/lib/utils"
 import { AppButton } from "@/components/common/AppButton"
+import { AppMp3Player } from "@/components/common/AppMp3Player"
 import { AppCard, AppCardContent } from "@/components/common/AppCard"
-import { RoleAvatar, roleTone, hashToneIndex } from "@/components/common/RoleAvatar"
+import { RoleAvatar, hashToneIndex } from "@/components/common/RoleAvatar"
 
 import {
   ApiError,
@@ -39,72 +38,23 @@ import {
 } from "@/api"
 
 import type {
-  AudioSentencesResponse,
-  AudioSentenceItem,
   AudioVersionDetail,
   AudioVersionListItem,
-  CandidateItem,
   ScriptDetail,
   TaskDetail,
-  KeepOriginalResponse,
-  UseCandidateCurrentResponse,
-  TaskAccepted,
 } from "@/api"
 
 // ============================================================
 // Status badge
 // ============================================================
 
-type AudioLikeStatus = AudioVersionListItem["status"] | AudioSentenceItem["status"] | CandidateItem['status']
-
-export function AudioStatusBadge({ status }: { status: AudioLikeStatus }) {
-  const map: Record<
-    AudioLikeStatus,
-    { label: string; className: string; icon: React.ElementType; spin?: boolean }
-  > = {
-    pending: { label: '待生成', className: 'bg-muted text-muted-foreground', icon: Clock },
-    accepted: { label: '已采用', className: 'bg-emerald-500/15 text-emerald-400', icon: CheckCircle2 },
-    discarded: { label: '已保留原片段', className: 'bg-muted text-muted-foreground', icon: RotateCcw },
-    queued: { label: "排队中", className: "bg-muted text-muted-foreground", icon: Clock },
-    running: {
-      label: "生成中",
-      className: "bg-sky-500/15 text-sky-400",
-      icon: Loader2,
-      spin: true,
-    },
-    ready: {
-      label: "已完成",
-      className: "bg-emerald-500/15 text-emerald-400",
-      icon: CheckCircle2,
-    },
-    succeeded: {
-      label: "成功",
-      className: "bg-emerald-500/15 text-emerald-400",
-      icon: CheckCircle2,
-    },
-    failed: { label: "失败", className: "bg-red-500/15 text-red-400", icon: AlertCircle },
-  }
-  const { label, className, icon: Icon, spin } = map[status]
-  return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
-        className,
-      )}
-    >
-      <Icon className={cn("size-3", spin && "animate-spin")} />
-      {label}
-    </span>
-  )
-}
-
 // ============================================================
 // 角色配色：角色名 → 配色序号（与脚本页一致，按脚本角色顺序）
 // ============================================================
 
-const RoleToneContext = React.createContext<Map<string, number>>(new Map())
+export const RoleToneContext = React.createContext<Map<string, number>>(new Map())
 
-function useRoleToneIndex() {
+export function useRoleToneIndex() {
   const map = React.useContext(RoleToneContext)
   return React.useCallback(
     (name: string) => map.get(name) ?? hashToneIndex(name),
@@ -123,40 +73,8 @@ export interface AudioPageProps {
 }
 
 export default function AudioPage({ projectId, scriptId, onNavigate }: AudioPageProps) {
-  const [roleDialogOpen, setRoleDialogOpen] = React.useState(false)
-  const [savingVoices, setSavingVoices] = React.useState(false)
-  const [voiceError, setVoiceError] = React.useState<string | null>(null)
-  const voiceBusy = React.useRef(false)
-  async function updateVoices(next: RoleDraft[]) {
-    if (!script || voiceBusy.current) return
-    voiceBusy.current = true
-    setSavingVoices(true)
-    setVoiceError(null)
-    try {
-      const updated = await scriptsApi.save(scriptId, {
-        expected_script_version: script.version,
-        expected_edit_revision: script.edit_revision,
-        title: script.title,
-        summary: script.summary,
-        roles: next,
-        sentences: script.sentences,
-      })
-      setScript(updated)
-      setRoleDialogOpen(false)
-    } catch (e) { setVoiceError(e instanceof Error ? e.message : '保存失败，请重试') }
-    finally { voiceBusy.current = false; setSavingVoices(false) }
-  }
-  async function toggleConfirmation() {
-    if (!script || voiceBusy.current) return
-    voiceBusy.current = true
-    setSavingVoices(true)
-    setVoiceError(null)
-    try {
-      const result = await scriptsApi[script.status === 'confirmed' ? 'unconfirm' : 'confirm'](scriptId, { expected_script_version: script.version, expected_edit_revision: script.edit_revision })
-      setScript({ ...script, ...result, editable: result.status === 'draft' })
-    } catch (e) { setVoiceError(e instanceof Error ? e.message : '操作失败，请重试') }
-    finally { voiceBusy.current = false; setSavingVoices(false) }
-  }
+  const [searchParams] = useSearchParams()
+  const requestedVersionId = searchParams.get("versionId")
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [script, setScript] = React.useState<ScriptDetail | null>(null)
@@ -172,9 +90,17 @@ export default function AudioPage({ projectId, scriptId, onNavigate }: AudioPage
         audioApi.listVersions(projectId, { script_id: scriptId, page: 1, page_size: 50 }),
       ])
       const sorted = [...list.items].sort((a, b) => b.version - a.version)
+      if (requestedVersionId && !sorted.some((v) => v.audio_version_id === requestedVersionId)) {
+        const requested = await audioApi.versionDetail(requestedVersionId)
+        if (requested.project_id === projectId && requested.script_id === scriptId) {
+          sorted.push(requested)
+          sorted.sort((a, b) => b.version - a.version)
+        }
+      }
       setScript(s)
       setVersions(sorted)
       setActiveVersionId((cur) => {
+        if (requestedVersionId && sorted.some((v) => v.audio_version_id === requestedVersionId)) return requestedVersionId
         if (cur && sorted.some((v) => v.audio_version_id === cur)) return cur
         const ready = sorted.find((v) => v.status === "ready")
         return ready?.audio_version_id ?? sorted[0]?.audio_version_id ?? null
@@ -184,7 +110,7 @@ export default function AudioPage({ projectId, scriptId, onNavigate }: AudioPage
     } finally {
       setLoading(false)
     }
-  }, [projectId, scriptId])
+  }, [projectId, scriptId, requestedVersionId])
 
   React.useEffect(() => {
     void load()
@@ -271,17 +197,7 @@ export default function AudioPage({ projectId, scriptId, onNavigate }: AudioPage
             <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary ring-1 ring-primary/20">
               V{script.version}
             </span>
-            {isConfirmed ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-medium text-emerald-400">
-                <span className="size-1.5 rounded-full bg-emerald-400" />
-                已确认
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-medium text-amber-400">
-                <span className="size-1.5 rounded-full bg-amber-400" />
-                未确认
-              </span>
-            )}
+            <StatusBadge status={script.status} />
           </div>
         </div>
 
@@ -313,55 +229,27 @@ export default function AudioPage({ projectId, scriptId, onNavigate }: AudioPage
         )}
 
         {/* 角色声音配置 + 音频版本 */}
-        <div className={cn("grid items-start gap-4", sorted.length > 0 && "lg:grid-cols-2")}>
-          <VoiceConfigCard
-            script={script}
-            isConfirmed={isConfirmed}
-            saving={savingVoices}
-            error={voiceError}
-            onEdit={() => {
-              setVoiceError(null)
-              setRoleDialogOpen(true)
-            }}
-            onToggleConfirmation={toggleConfirmation}
-          />
-          {sorted.length > 0 && (
-            <VersionList
-              versions={sorted}
-              activeId={activeVersionId}
-              onSelect={setActiveVersionId}
-            />
-          )}
-        </div>
-        {roleDialogOpen && (
-          <fieldset disabled={savingVoices}>
-            <RoleVoiceEditorDialog
-              roles={script.roles}
-              onClose={() => {
-                if (!voiceBusy.current) setRoleDialogOpen(false)
-              }}
-              onApply={updateVoices}
-            />
-            {voiceError && (
-              <p
-                role="alert"
-                className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-lg border border-destructive/40 bg-card px-4 py-3 text-sm text-destructive shadow-lg"
-              >
-                {voiceError}
-              </p>
-            )}
-          </fieldset>
-        )}
-
-        {/* 主体：要么生成，要么查看详情 */}
         {active ? (
+          <AppCard className="overflow-hidden">
+            <div className="grid lg:grid-cols-[320px_minmax(0,1fr)]">
+              <VersionList
+                versions={sorted}
+                activeId={active.audio_version_id}
+                onSelect={setActiveVersionId}
+              />
+              <div className="min-w-0">
           <AudioVersionView
             key={`${active.audio_version_id}:${script.edit_revision}`}
             version={active}
+            scriptConfirmed={isConfirmed}
+            scriptId={scriptId}
             projectId={projectId}
             onRefreshList={refreshVersions}
             onNavigate={onNavigate}
           />
+              </div>
+            </div>
+          </AppCard>
         ) : (
           <GeneratePanel
             key={`${script.script_id}:${script.edit_revision}:${script.status}`}
@@ -380,77 +268,90 @@ export default function AudioPage({ projectId, scriptId, onNavigate }: AudioPage
 // Voice config card & version list
 // ============================================================
 
-function VoiceConfigCard({
-  script,
-  isConfirmed,
-  saving,
-  error,
-  onEdit,
-  onToggleConfirmation,
-}: {
-  script: ScriptDetail
-  isConfirmed: boolean
-  saving: boolean
-  error: string | null
-  onEdit: () => void
-  onToggleConfirmation: () => void
+export function AudioRoleSettings({ detail, scriptConfirmed, onNavigate }: {
+  detail: AudioVersionDetail
+  scriptConfirmed: boolean
+  onNavigate: (href: string) => void
 }) {
+  const queryClient = useQueryClient()
+  const busy = React.useRef(false)
+  const [submitting, setSubmitting] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  const snapshotRoles = detail.script_snapshot?.roles
+  const roles = Array.isArray(snapshotRoles)
+    ? snapshotRoles.filter((role): role is Record<string, unknown> =>
+        !!role && typeof role === "object" && typeof role.name === "string")
+    : []
+
+  const editScript = async () => {
+    if (busy.current) return
+    busy.current = true
+    setSubmitting(true)
+    setError(null)
+    try {
+      const current = await scriptsApi.detail(detail.script_id)
+      if (current.status === "confirmed") {
+        await scriptsApi.unconfirm(current.script_id, {
+          expected_script_version: current.version,
+          expected_edit_revision: current.edit_revision,
+        })
+      }
+      void queryClient.invalidateQueries({ queryKey: ["scripts", detail.project_id] })
+      void queryClient.invalidateQueries({ queryKey: ["project", detail.project_id] })
+      onNavigate(`/projects/${detail.project_id}/scripts/${detail.script_id}`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "取消确认失败，请重试")
+    } finally {
+      busy.current = false
+      setSubmitting(false)
+    }
+  }
+
   return (
-    <AppCard>
-      <AppCardContent className="space-y-4 p-5">
-        <div className="flex items-start gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Mic className="size-4" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold">角色声音配置</h2>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              修改声音前需取消确认；保存后重新确认，再试听或生成音频。已有音频保留生成时的配置。
-            </p>
-          </div>
-        </div>
-
-        <ul className="grid gap-2 sm:grid-cols-2">
-          {script.roles.map((role, i) => (
-            <li
-              key={role.role_id}
-              className="flex items-center gap-2.5 rounded-lg border border-border bg-secondary/20 px-3 py-2"
-            >
-              <RoleAvatar name={role.name} toneIndex={i} size="sm" />
-              <div className="min-w-0">
-                <p className="truncate text-xs font-medium">{role.name}</p>
-                <p className="truncate text-[11px] text-muted-foreground">
-                  {role.voice_config.voice_id} · x{role.voice_config.speed}
-                </p>
+    <section className="mt-5 space-y-3 border-t border-border pt-5" aria-label="音频角色声音设定">
+      <div>
+        <h3 className="text-sm font-semibold">角色声音设定</h3>
+        <p className="mt-1 text-xs text-muted-foreground">本音频生成时的声音设定，仅供查看。修改脚本不会改变已有音频。</p>
+      </div>
+      <div className="grid items-start gap-2 sm:grid-cols-2">
+        {roles.map((role, index) => {
+          const voice = role.voice_config && typeof role.voice_config === "object"
+            ? role.voice_config as Record<string, unknown>
+            : null
+          const fields = [
+            ["服务商", voice?.tts_provider],
+            ["模型", voice?.tts_model],
+            ["音色", voice?.voice_id],
+            ["语速", voice?.speed],
+            ["风格", voice?.style],
+          ]
+          return (
+            <div key={String(role.role_id ?? role.role_key ?? index)} className="rounded-lg border border-border bg-secondary/20">
+              <div className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium">
+                <RoleAvatar name={String(role.name)} toneIndex={index} size="sm" />
+                <span className="min-w-0 flex-1 break-words">{String(role.name)}</span>
               </div>
-            </li>
-          ))}
-        </ul>
-
-        <div className="flex flex-wrap gap-2">
-          <AppButton
-            size="sm"
-            variant="outline"
-            disabled={saving || !script.roles.length || !script.editable || isConfirmed}
-            onClick={onEdit}
-          >
-            <SlidersHorizontal />
-            编辑角色声音
-          </AppButton>
-          <AppButton
-            size="sm"
-            variant={isConfirmed ? "secondary" : "primary"}
-            disabled={saving}
-            onClick={onToggleConfirmation}
-          >
-            {saving && <Loader2 className="animate-spin" />}
-            {isConfirmed ? "取消确认以编辑声音" : "确认脚本"}
-          </AppButton>
-        </div>
-
-        {error && <InlineError>{error}</InlineError>}
-      </AppCardContent>
-    </AppCard>
+              {voice ? (
+                <dl className="space-y-2 border-t border-border px-3 py-3 text-xs">
+                  {fields.map(([label, value]) => (
+                    <div key={String(label)} className="grid grid-cols-[3rem_minmax(0,1fr)] gap-2">
+                      <dt className="text-muted-foreground">{String(label)}</dt>
+                      <dd className="break-words">{value == null || value === "" ? "—" : String(value)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : <p className="px-3 pb-3 text-xs text-muted-foreground">本音频未记录该角色的声音设定。</p>}
+            </div>
+          )
+        })}
+      </div>
+      {roles.length === 0 && <p className="text-xs text-muted-foreground">本音频未记录角色声音设定。</p>}
+      <AppButton size="sm" variant="outline" disabled={submitting} onClick={() => void editScript()}>
+        {submitting ? <Loader2 className="animate-spin" /> : <SlidersHorizontal />}
+        {scriptConfirmed ? "取消确认以编辑角色声音" : "前往脚本编辑角色声音"}
+      </AppButton>
+      {error && <InlineError>{error}</InlineError>}
+    </section>
   )
 }
 
@@ -464,7 +365,7 @@ function VersionList({
   onSelect: (id: string) => void
 }) {
   return (
-    <AppCard className="flex flex-col overflow-hidden">
+    <div className="flex min-w-0 flex-col overflow-hidden border-b border-border lg:border-b-0 lg:border-r">
       <div className="flex items-center justify-between border-b border-border px-5 py-3">
         <div className="flex items-center gap-2.5">
           <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -510,7 +411,7 @@ function VersionList({
                     {v.duration_ms != null ? ` · ${formatMs(v.duration_ms)}` : ""}
                   </p>
                 </div>
-                <AudioStatusBadge status={v.status} />
+                <StatusBadge status={v.status} />
                 <ChevronRight
                   className={cn(
                     "size-4 shrink-0 text-muted-foreground transition-transform",
@@ -522,7 +423,7 @@ function VersionList({
           )
         })}
       </ul>
-    </AppCard>
+    </div>
   )
 }
 
@@ -538,6 +439,8 @@ interface GeneratePanelProps {
 }
 
 function GeneratePanel({ projectId, script, confirmed, onAccepted }: GeneratePanelProps) {
+  const generation = useGenerationConfirmation()
+  const generationBusy = React.useRef(false)
   const [previewLoading, setPreviewLoading] = React.useState(false)
   const [previewPlayUrl, setPreviewPlayUrl] = React.useState<string | null>(null)
   const [previewError, setPreviewError] = React.useState<string | null>(null)
@@ -581,6 +484,10 @@ function GeneratePanel({ projectId, script, confirmed, onAccepted }: GeneratePan
   }
 
   const runFull = async () => {
+    if (generationBusy.current) return
+    generationBusy.current = true
+    const acceptedByUser = await generation.confirm({ kind: "audio", text: script.sentences.map(s => s.text).join("\n"), title: script.title })
+    if (!acceptedByUser) { generationBusy.current = false; return }
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
@@ -598,6 +505,7 @@ function GeneratePanel({ projectId, script, confirmed, onAccepted }: GeneratePan
       if (isAbort(e)) return
       setFullError(e instanceof ApiError ? `${e.code}: ${e.message}` : "生成失败")
     } finally {
+      generationBusy.current = false
       setFullLoading(false)
     }
   }
@@ -610,6 +518,7 @@ function GeneratePanel({ projectId, script, confirmed, onAccepted }: GeneratePan
 
   return (
     <AppCard variant="accent" className="relative overflow-hidden">
+      {generation.dialog}
       <div
         aria-hidden
         className="pointer-events-none absolute -right-16 -top-24 size-64 rounded-full bg-primary/15 blur-3xl"
@@ -697,7 +606,7 @@ function GeneratePanel({ projectId, script, confirmed, onAccepted }: GeneratePan
         {previewPlayUrl && (
           <div className="mt-5 rounded-xl border border-border bg-secondary/30 p-4">
             <p className="mb-2 text-xs font-medium text-muted-foreground">试听片段</p>
-            <audio src={previewPlayUrl} controls className="w-full" />
+            <AppMp3Player tracks={[{ src: previewPlayUrl, title: "试听片段" }]} variant="compact" />
           </div>
         )}
       </AppCardContent>
@@ -710,6 +619,8 @@ function GeneratePanel({ projectId, script, confirmed, onAccepted }: GeneratePan
 // ============================================================
 
 interface AudioVersionViewProps {
+  scriptConfirmed: boolean
+  scriptId: string
   version: AudioVersionListItem
   projectId: string
   onRefreshList: () => void
@@ -717,28 +628,58 @@ interface AudioVersionViewProps {
 }
 
 function AudioVersionView({
+  scriptConfirmed,
+  scriptId,
   version,
   projectId,
   onRefreshList,
   onNavigate,
 }: AudioVersionViewProps) {
+  const generation = useGenerationConfirmation()
+  const regenerateBusy = React.useRef(false)
+  const [regenerating, setRegenerating] = React.useState(false)
+  const [regenerateError, setRegenerateError] = React.useState<string | null>(null)
   const [detail, setDetail] = React.useState<AudioVersionDetail | null>(null)
-  const [sentences, setSentences] = React.useState<AudioSentencesResponse | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
-  const [activeSentenceId, setActiveSentenceId] = React.useState<string | null>(null)
+
+  const regenerate = async () => {
+    if (regenerateBusy.current) return
+    regenerateBusy.current = true
+    setRegenerating(true)
+    setRegenerateError(null)
+    try {
+      const script = await scriptsApi.detail(scriptId)
+      if (script.status !== "confirmed" || script.confirmed_revision !== script.edit_revision) {
+        throw new Error("请先在脚本页确认当前脚本，再重新生成音频")
+      }
+      if (!await generation.confirm({
+        kind: "audio",
+        text: script.sentences.map(sentence => sentence.text).join("\n"),
+        title: `基于当前已确认脚本 V${script.version}：${script.title}`,
+      })) return
+      const accepted = await audioApi.generate(projectId, {
+        script_id: scriptId,
+        expected_script_version: script.version,
+        expected_edit_revision: script.edit_revision,
+      }, newIdempotencyKey())
+      onRefreshList()
+      if (accepted.audio_version_id) {
+        onNavigate(`/projects/${projectId}/scripts/${scriptId}/audio?versionId=${encodeURIComponent(accepted.audio_version_id)}`)
+      }
+    } catch (e) {
+      setRegenerateError(e instanceof Error ? e.message : "重新生成音频失败，请重试")
+    } finally {
+      regenerateBusy.current = false
+      setRegenerating(false)
+    }
+  }
 
   const load = React.useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [d, s] = await Promise.all([
-        audioApi.versionDetail(version.audio_version_id),
-        audioApi.sentences(version.audio_version_id),
-      ])
-      setDetail(d)
-      setSentences(s)
-      setActiveSentenceId((cur) => cur ?? s.sentences[0]?.audio_sentence_id ?? null)
+      setDetail(await audioApi.versionDetail(version.audio_version_id))
     } catch (e) {
       setError(e instanceof ApiError ? `${e.code}: ${e.message}` : "加载音频失败")
     } finally {
@@ -758,8 +699,8 @@ function AudioVersionView({
     return () => clearInterval(timer)
   }, [detail, load])
 
-  if (loading) return <AudioDetailSkeleton />
-  if (error || !detail || !sentences) {
+  if (loading) return <div className="p-6"><AudioDetailSkeleton /></div>
+  if (error || !detail) {
     return (
       <ErrorBlock
         title="加载音频失败"
@@ -770,14 +711,10 @@ function AudioVersionView({
   }
 
   const canDownload = detail.status === "ready" && !!detail.current_asset_id
-  const activeSentence =
-    sentences.sentences.find((s) => s.audio_sentence_id === activeSentenceId) ?? null
 
   return (
-    <div className="space-y-4">
-      {/* Header + full audio */}
-      <AppCard>
         <AppCardContent className="p-6">
+          {generation.dialog}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
@@ -788,17 +725,19 @@ function AudioVersionView({
               </h2>
             </div>
             <div className="flex items-center gap-2">
-              <AudioStatusBadge status={detail.status} />
+              <StatusBadge status={detail.status} />
               <span className="font-mono text-xs text-muted-foreground">
                 selection r{detail.selection_revision}
               </span>
             </div>
           </div>
 
-          {detail.status === "ready" && detail.play_url && (
+          {detail.status === "ready" && (
             <>
               <div className="mt-5">
-                <AudioPlayer src={detail.play_url} />
+                {detail.play_url && (
+                  <AppMp3Player tracks={[{ src: detail.play_url, title: `音频 V${detail.version}` }]} />
+                )}
               </div>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
@@ -810,6 +749,8 @@ function AudioVersionView({
                   )}
                   <MetaChip icon={FileText}>基于脚本 V{detail.script_version}</MetaChip>
                 </div>
+                <div className="flex flex-wrap gap-2">
+                  <AppButton variant="outline" onClick={() => onNavigate(`/projects/${projectId}/scripts/${scriptId}/audio/${detail.audio_version_id}/sentences`)}><Headphones />逐句试听<ChevronRight /></AppButton>
                 {canDownload && (
                   <AppButton
                     variant="outline"
@@ -826,7 +767,14 @@ function AudioVersionView({
                     下载 MP3
                   </AppButton>
                 )}
+                  <AppButton variant="outline" onClick={() => void regenerate()} disabled={regenerating || !scriptConfirmed}
+                    title={!scriptConfirmed ? "请先在脚本页确认脚本" : "使用当前已确认脚本生成新的音频版本"}>
+                    {regenerating ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                    重新生成音频
+                  </AppButton>
               </div>
+              </div>
+              {regenerateError && <InlineError>{regenerateError}</InlineError>}
               {detail.source_script_changed && (
                 <p className="mt-3 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-400">
                   <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
@@ -835,6 +783,8 @@ function AudioVersionView({
               )}
             </>
           )}
+
+          <AudioRoleSettings detail={detail} scriptConfirmed={scriptConfirmed} onNavigate={onNavigate} />
 
           {detail.status === "queued" || detail.status === "running" ? (
             <div
@@ -855,400 +805,12 @@ function AudioVersionView({
             <RetryFailedTask
               projectId={projectId}
               audioVersionId={detail.audio_version_id}
-              onRetried={load}
+              onRetried={() => { void load(); onRefreshList() }}
             />
           )}
         </AppCardContent>
-      </AppCard>
 
-      {/* Two-column: sentence list + active sentence panel */}
-      <div className="grid gap-4 lg:grid-cols-[minmax(260px,320px)_1fr] lg:items-start">
-        <SentenceList
-          sentences={sentences}
-          activeId={activeSentenceId}
-          onSelect={setActiveSentenceId}
-        />
-        {activeSentence ? (
-          <SentencePanel
-            key={activeSentence.audio_sentence_id}
-            sentence={activeSentence}
-            revision={sentences.selection_revision}
-            onChanged={() => {
-              void load()
-              onRefreshList()
-            }}
-          />
-        ) : (
-          <AppCard>
-            <AppCardContent className="p-6 text-sm text-muted-foreground">
-              该音频版本没有可用的句段。
-            </AppCardContent>
-          </AppCard>
-        )}
-      </div>
-    </div>
-  )
-}
 
-// ============================================================
-// Sentence list (A-05)
-// ============================================================
-
-function SentenceList({
-  sentences,
-  activeId,
-  onSelect,
-}: {
-  sentences: AudioSentencesResponse
-  activeId: string | null
-  onSelect: (id: string) => void
-}) {
-  const toneIndexOf = useRoleToneIndex()
-  const total = sentences.total_sentences
-  const pct = total > 0 ? Math.round((sentences.completed_sentences / total) * 100) : 0
-
-  return (
-    <AppCard className="flex flex-col overflow-hidden">
-      <div className="space-y-2 border-b border-border px-4 py-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">逐句</h2>
-          <span className="text-[11px] tabular-nums text-muted-foreground">
-            {sentences.completed_sentences}/{sentences.total_sentences} 完成
-            {sentences.failed_sentences > 0 && (
-              <span className="ml-1 text-destructive">
-                · {sentences.failed_sentences} 失败
-              </span>
-            )}
-          </span>
-        </div>
-        <div className="h-1 overflow-hidden rounded-full bg-secondary">
-          <div
-            className="h-full rounded-full bg-primary transition-all"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-      </div>
-      <ul className="max-h-[560px] flex-1 space-y-1 overflow-y-auto overscroll-contain p-2">
-        {sentences.sentences.map((s) => {
-          const active = s.audio_sentence_id === activeId
-          const tone = toneIndexOf(s.role.name)
-          return (
-            <li key={s.audio_sentence_id}>
-              <button
-                type="button"
-                aria-current={active ? "true" : undefined}
-                onClick={() => onSelect(s.audio_sentence_id)}
-                className={cn(
-                  "flex w-full items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  active
-                    ? "border-primary/40 bg-primary/5"
-                    : "border-transparent hover:bg-accent/40",
-                )}
-              >
-                <RoleAvatar name={s.role.name} toneIndex={tone} size="sm" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <span className="font-mono tabular-nums">#{s.sequence}</span>
-                    <span className={cn("truncate font-medium", roleTone(tone).text)}>
-                      {s.role.name}
-                    </span>
-                    {s.has_ready_candidates && (
-                      <span className="inline-flex items-center gap-0.5 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-400">
-                        <ThumbsUp className="size-2.5" />
-                        候选
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed">{s.text}</p>
-                </div>
-                <div className="shrink-0 pt-0.5">
-                  <AudioStatusBadge status={s.status} />
-                </div>
-              </button>
-            </li>
-          )
-        })}
-      </ul>
-    </AppCard>
-  )
-}
-
-// ============================================================
-// Sentence detail panel: per-sentence listening (A-09) +
-// regenerate candidate (A-06) + candidate list/decision (A-07/A-08)
-// ============================================================
-
-function SentencePanel({
-  sentence,
-  revision,
-  onChanged,
-}: {
-  sentence: AudioSentenceItem
-  revision: number
-  onChanged: () => void
-}) {
-  const [regenerating, setRegenerating] = React.useState(false)
-  const [regenError, setRegenError] = React.useState<string | null>(null)
-  const [candidates, setCandidates] = React.useState<CandidateItem[] | null>(null)
-  const [loadingCandidates, setLoadingCandidates] = React.useState(false)
-  const [candidateError, setCandidateError] = React.useState<string | null>(null)
-  const [decidingId, setDecidingId] = React.useState<string | null>(null)
-  const [decisionError, setDecisionError] = React.useState<string | null>(null)
-  const operationBusy = React.useRef(false)
-
-  const loadCandidates = React.useCallback(async () => {
-    setLoadingCandidates(true)
-    setCandidateError(null)
-    try {
-      const res = await audioApi.candidates(sentence.audio_sentence_id, {
-        page: 1,
-        page_size: 20,
-      })
-      setCandidates(res.items)
-    } catch (e) {
-      setCandidateError(e instanceof ApiError ? e.message : "加载候选失败")
-    } finally {
-      setLoadingCandidates(false)
-    }
-  }, [sentence.audio_sentence_id])
-
-  React.useEffect(() => {
-    void loadCandidates()
-  }, [loadCandidates, revision])
-
-  const handleRegenerate = async () => {
-    if (operationBusy.current) return
-    operationBusy.current = true
-    setRegenerating(true)
-    setRegenError(null)
-    try {
-      const accepted: TaskAccepted = await audioApi.regenerateSentence(
-        sentence.audio_sentence_id,
-        { expected_selection_revision: revision },
-        newIdempotencyKey(),
-      )
-      const task = await pollTask(accepted.task_id)
-      if (task.status === 'failed') throw new Error(task.error_message ?? '候选生成失败')
-      await loadCandidates()
-      onChanged()
-    } catch (e) {
-      if (isAbort(e)) return
-      setRegenError(e instanceof ApiError ? `${e.code}: ${e.message}` : "重生成失败")
-    } finally {
-      operationBusy.current = false
-      setRegenerating(false)
-    }
-  }
-
-  const handleDecision = async (
-    candidateId: string,
-    choice: "use_candidate" | "keep_original",
-  ) => {
-    if (operationBusy.current) return
-    operationBusy.current = true
-    setDecidingId(candidateId)
-    setDecisionError(null)
-    try {
-      const res = await audioApi.decide(
-        candidateId,
-        { choice, expected_selection_revision: revision },
-        newIdempotencyKey(),
-      )
-      // 采用候选会产生合并任务 (202)；轮询直到完成
-      const asAccepted = res as TaskAccepted
-      if (asAccepted && typeof asAccepted.task_id === "string") {
-        const task = await pollTask(asAccepted.task_id)
-        if (task.status === 'failed') throw new Error(task.error_message ?? '采用候选失败，音频合并未完成')
-      }
-      // keep_original / 已采用幂等 (200) 直接结束
-      void (res as KeepOriginalResponse | UseCandidateCurrentResponse)
-      await loadCandidates()
-      onChanged()
-    } catch (e) {
-      if (isAbort(e)) return
-      setDecisionError(e instanceof Error ? e.message : "操作失败")
-      if (e instanceof ApiError && e.status === 409) { await loadCandidates(); onChanged() }
-    } finally {
-      operationBusy.current = false
-      setDecidingId(null)
-    }
-  }
-
-  const currentPlay = sentence.play_url
-  const toneIndexOf = useRoleToneIndex()
-  const tone = toneIndexOf(sentence.role.name)
-
-  return (
-    <AppCard>
-      <AppCardContent className="space-y-5 p-6">
-        {/* 当前片段：按句试听 */}
-        <div>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-3">
-              <RoleAvatar name={sentence.role.name} toneIndex={tone} />
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={cn("text-sm font-semibold", roleTone(tone).text)}>
-                  {sentence.role.name}
-                </span>
-                <span className="rounded bg-secondary/60 px-1.5 py-0.5 font-mono text-[11px]">
-                  #{sentence.sequence}
-                </span>
-                <AudioStatusBadge status={sentence.status} />
-              </div>
-            </div>
-            <span
-              className="max-w-full truncate rounded-md bg-secondary/50 px-2 py-1 text-[11px] text-muted-foreground"
-              title={formatParams(sentence.current_params)}
-            >
-              当前参数：{formatParams(sentence.current_params)}
-            </span>
-          </div>
-          <p className="mt-4 whitespace-pre-wrap border-l-2 border-primary/40 pl-4 text-sm leading-relaxed">
-            {sentence.text}
-          </p>
-        </div>
-
-        {sentence.error_message && (
-          <InlineError>生成错误：{sentence.error_message}</InlineError>
-        )}
-
-        {currentPlay ? (
-          <div className="rounded-xl border border-border bg-secondary/30 p-4">
-            <p className="mb-2 text-xs font-medium text-muted-foreground">当前片段试听</p>
-            <audio src={currentPlay} controls className="w-full" />
-          </div>
-        ) : (
-          <p className="rounded-lg border border-dashed border-border px-4 py-3 text-xs text-muted-foreground">
-            当前片段尚未就绪{sentence.status === "failed" ? "（可重试整篇音频或重生成此句）" : ""}
-          </p>
-        )}
-
-        <div className="space-y-3 border-t border-border pt-5">
-          <div className="flex flex-wrap gap-2">
-            <AppButton
-              size="sm"
-              variant="outline"
-              onClick={handleRegenerate}
-              disabled={regenerating || decidingId !== null}
-            >
-              {regenerating ? <Loader2 className="animate-spin" /> : <RotateCcw />}
-              重新生成此句候选
-            </AppButton>
-            <AppButton
-              size="sm"
-              variant="ghost"
-              onClick={() => void loadCandidates()}
-              disabled={loadingCandidates}
-            >
-              {loadingCandidates ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-              刷新候选
-            </AppButton>
-          </div>
-          {regenError && <InlineError>{regenError}</InlineError>}
-          {candidateError && <InlineError>{candidateError}</InlineError>}
-          {decisionError && <InlineError>{decisionError}</InlineError>}
-
-          {/* 候选列表 */}
-          {candidates && candidates.length > 0 && (
-            <div className="space-y-2.5">
-              <p className="text-xs font-medium text-muted-foreground">
-                候选片段（{candidates.length}）
-              </p>
-              {candidates.map((c) => (
-                <CandidateRow
-                  key={c.candidate_id}
-                  candidate={c}
-                  deciding={decidingId === c.candidate_id}
-                  disabled={regenerating || decidingId !== null}
-                  onDecision={(choice) => handleDecision(c.candidate_id, choice)}
-                />
-              ))}
-            </div>
-          )}
-
-          {candidates && candidates.length === 0 && (
-            <p className="rounded-lg border border-dashed border-border px-4 py-3 text-xs text-muted-foreground">
-              还没有候选。点击"重新生成此句候选"后会出现可试听的候选片段。
-            </p>
-          )}
-        </div>
-      </AppCardContent>
-    </AppCard>
-  )
-}
-
-// ============================================================
-// Candidate row
-// ============================================================
-
-function CandidateRow({
-  candidate,
-  deciding,
-  disabled,
-  onDecision,
-}: {
-  candidate: CandidateItem
-  deciding: boolean
-  disabled: boolean
-  onDecision: (choice: "use_candidate" | "keep_original") => void
-}) {
-  const actionable =
-    candidate.status === "ready" && !candidate.is_stale && !candidate.is_current
-  return (
-    <div
-      className={cn(
-        "rounded-xl border bg-card px-4 py-3 text-sm",
-        candidate.is_current ? "border-emerald-500/30" : "border-border",
-      )}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <AudioStatusBadge status={candidate.status as AudioLikeStatus} />
-          {candidate.is_current && (
-            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
-              当前使用
-            </span>
-          )}
-          {candidate.is_stale && (
-            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-400">
-              基准已变化
-            </span>
-          )}
-          {candidate.duration_ms != null && (
-            <span className="tabular-nums text-muted-foreground">
-              {formatMs(candidate.duration_ms)}
-            </span>
-          )}
-        </div>
-        <span className="text-[11px] text-muted-foreground">
-          {new Date(candidate.created_at).toLocaleString("zh-CN")}
-        </span>
-      </div>
-
-      {candidate.play_url ? (
-        <audio src={candidate.play_url} controls className="mt-3 w-full" />
-      ) : (
-        <p className="mt-2 text-xs text-muted-foreground">候选尚未生成可播放片段</p>
-      )}
-
-      {actionable && (
-        <div className="mt-3 flex gap-2">
-          <AppButton size="sm" onClick={() => onDecision("use_candidate")} disabled={disabled}>
-            {deciding ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}
-            {deciding ? '正在处理…' : '采用此候选'}
-          </AppButton>
-          <AppButton
-            size="sm"
-            variant="ghost"
-            onClick={() => onDecision("keep_original")}
-            disabled={disabled}
-          >
-            保留原片段
-          </AppButton>
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -1351,129 +913,6 @@ function RetryFailedTask({
 }
 
 // ============================================================
-// Audio player
-// ============================================================
-
-const PLAYBACK_RATES = [1, 1.25, 1.5, 2, 0.75]
-
-const rangeThumb =
-  "[&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-0 [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-[0_0_10px_hsl(var(--primary))] " +
-  "[&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-primary"
-
-/** 已播放部分填充主题色的进度条背景 */
-const fillStyle = (pct: number): React.CSSProperties => ({
-  background: `linear-gradient(to right, hsl(var(--primary)) ${pct}%, hsl(var(--border)) ${pct}%)`,
-})
-
-function AudioPlayer({ src }: { src: string }) {
-  const audioRef = React.useRef<HTMLAudioElement>(null)
-  const [playing, setPlaying] = React.useState(false)
-  const [currentTime, setCurrentTime] = React.useState(0)
-  const [duration, setDuration] = React.useState(0)
-  const [volume, setVolume] = React.useState(1)
-  const [rate, setRate] = React.useState(1)
-
-  const togglePlay = () => {
-    const el = audioRef.current
-    if (!el) return
-    if (playing) el.pause()
-    else void el.play()
-  }
-
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const el = audioRef.current
-    if (!el) return
-    const time = Number(e.target.value)
-    el.currentTime = time
-    setCurrentTime(time)
-  }
-
-  const cycleRate = () => {
-    const next = PLAYBACK_RATES[(PLAYBACK_RATES.indexOf(rate) + 1) % PLAYBACK_RATES.length]
-    setRate(next)
-    if (audioRef.current) audioRef.current.playbackRate = next
-  }
-
-  const progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0
-
-  return (
-    <div className="rounded-2xl border border-border bg-gradient-to-br from-secondary/50 to-secondary/20 p-4 sm:p-5">
-      <audio
-        ref={audioRef}
-        src={src}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-        onVolumeChange={(e) => setVolume(e.currentTarget.volume)}
-      />
-      <div className="flex items-center gap-4">
-        <AppButton
-          size="icon"
-          variant="primary"
-          className="size-12 shrink-0 rounded-full"
-          onClick={togglePlay}
-          aria-label={playing ? "暂停" : "播放"}
-        >
-          {playing ? <Pause className="size-5" /> : <Play className="size-5 translate-x-0.5" />}
-        </AppButton>
-
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <input
-            type="range"
-            min={0}
-            max={duration || 0}
-            step={0.1}
-            value={currentTime}
-            onChange={handleSeek}
-            aria-label="播放进度"
-            style={fillStyle(progress)}
-            className={cn(
-              "h-1.5 w-full cursor-pointer appearance-none rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              rangeThumb,
-            )}
-          />
-          <div className="flex justify-between text-[11px] tabular-nums text-muted-foreground">
-            <span>{formatSec(currentTime)}</span>
-            <span>{formatSec(duration)}</span>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={cycleRate}
-          aria-label={`播放速度 ${rate}x，点击切换`}
-          className="hidden h-8 min-w-12 shrink-0 rounded-md border border-border px-2 text-xs font-medium tabular-nums text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:block"
-        >
-          {rate}x
-        </button>
-
-        <div className="hidden items-center gap-2 sm:flex">
-          <Volume2 className="size-4 text-muted-foreground" />
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={volume}
-            onChange={(e) => {
-              const el = audioRef.current
-              if (el) el.volume = Number(e.target.value)
-            }}
-            aria-label="音量"
-            style={fillStyle(volume * 100)}
-            className={cn(
-              "h-1.5 w-20 cursor-pointer appearance-none rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              rangeThumb,
-            )}
-          />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ============================================================
 // Skeletons & blocks
 // ============================================================
 
@@ -1498,19 +937,15 @@ function AudioPageSkeleton() {
   )
 }
 
-function AudioDetailSkeleton() {
+export function AudioDetailSkeleton() {
   return (
     <div role="status" aria-label="正在加载音频" className="space-y-4">
       <div className="h-48 animate-pulse rounded-xl border border-border bg-card" />
-      <div className="grid gap-4 lg:grid-cols-[minmax(260px,320px)_1fr]">
-        <div className="h-80 animate-pulse rounded-xl border border-border bg-card" />
-        <div className="h-80 animate-pulse rounded-xl border border-border bg-card" />
-      </div>
-    </div>
+</div>
   )
 }
 
-function ErrorBlock({
+export function ErrorBlock({
   title,
   message,
   onBack,
@@ -1538,7 +973,7 @@ function ErrorBlock({
 }
 
 /** 行内错误提示：红色描边 + 图标，比一行红字更醒目 */
-function InlineError({
+export function InlineError({
   children,
   className,
 }: {
@@ -1578,7 +1013,7 @@ function MetaChip({
 // Helpers
 // ============================================================
 
-function isAbort(e: unknown): boolean {
+export function isAbort(e: unknown): boolean {
   return (
     (e instanceof DOMException && e.name === "AbortError") ||
     (typeof e === "object" && e !== null && "name" in e && (e as { name: string }).name === "AbortError")
@@ -1592,7 +1027,7 @@ function formatSec(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`
 }
 
-function formatMs(ms: number): string {
+export function formatMs(ms: number): string {
   return formatSec(ms / 1000)
 }
 
@@ -1602,16 +1037,6 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function formatParams(params: Record<string, unknown>): string {
-  const entries = Object.entries(params ?? {})
-  if (entries.length === 0) return "默认参数"
-  return entries
-    .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
-    .join(" · ")
-}
-
-
-/** 生成下载文件名：优先使用脚本快照中的 title，回退到"播客音频" */
 export function buildAudioFileName(snapshot: unknown, version: number): string {
   const snap = (snapshot ?? {}) as Record<string, unknown>
   const raw =

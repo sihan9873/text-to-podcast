@@ -16,6 +16,7 @@ import {
   FileText,
   Gauge,
   Languages,
+  List,
   Loader2,
   Lock,
   Pencil,
@@ -51,6 +52,7 @@ const TOOLS = [
   { id: "estimate", label: "估算", icon: Gauge },
   { id: "voices", label: "声音", icon: Mic },
   { id: "search", label: "搜索", icon: Search },
+  { id: "contents", label: "目录", icon: List },
 ] as const
 
 // ============================================================
@@ -133,7 +135,7 @@ function Step({ n, last, children }: { n: number; last?: boolean; children: Reac
   )
 }
 
-const TOOL_TITLES = { source: "原文", estimate: "生成估算", voices: "角色声音", search: "搜索与替换" } as const
+const TOOL_TITLES = { source: "原文", estimate: "生成估算", voices: "角色声音", search: "搜索与替换", contents: "句子目录" } as const
 
 function StatChip({ icon: Icon, title, children }: { icon: LucideIcon; title?: string; children: React.ReactNode }) {
   return (
@@ -499,9 +501,11 @@ const clearSearch = () => { setSearchQuery(""); setReplaceNotice("") }
 
 const jumpToSentence = (id: string) => {
   setMobilePanel("script")
-  requestAnimationFrame(() =>
-    document.getElementById(`sentence-${id}`)?.scrollIntoView({ block: "center", behavior: "smooth" }),
-  )
+  requestAnimationFrame(() => {
+    const row = document.getElementById(`sentence-${id}`)
+    row?.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true })
+    row?.scrollIntoView({ block: "center", behavior: "smooth" })
+  })
 }
   // ---------- 渲染 ----------
   if (loading) return <ScriptSkeleton />
@@ -626,7 +630,7 @@ const actions = (
   "min-h-0 min-w-0 flex-col items-stretch gap-1 overflow-y-auto border-r border-border/60 bg-secondary/10 p-2 lg:flex",
   mobilePanel === "source" ? "flex" : "hidden")}>
   <nav aria-label="功能导航" className="flex flex-col gap-1">
-    {TOOLS.map(({ id, label, icon: Icon }) => {
+    {TOOLS.filter(item => item.id !== "contents" || script.sentences.length > 100).map(({ id, label, icon: Icon }) => {
       const active = activeTool === id && !sourceCollapsed
       return (
         <button key={id} type="button" aria-pressed={active} title={label}
@@ -658,6 +662,26 @@ const actions = (
               meta={activeTool === "source" ? <span className="text-xs text-muted-foreground">{sourceWordCount.toLocaleString("zh-CN")} 字</span> : undefined}
             />
             <div tabIndex={0} role="region" aria-label="当前功能内容" className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain break-words p-4", regionFocus)}>
+              {activeTool === "contents" && script.sentences.length > 100 && (
+                <nav aria-label="句子目录" className="space-y-3">
+                  <ToolIntro>共 {script.sentences.length} 句，每 100 句一个入口。点击可定位并聚焦对应句子。</ToolIntro>
+                  <ul className="space-y-1">
+                    {Array.from({ length: Math.ceil(script.sentences.length / 100) }, (_, group) => {
+                      const index = group * 100
+                      const sentence = script.sentences[index]
+                      return (
+                        <li key={sentence.sentence_id}>
+                          <button type="button" onClick={() => jumpToSentence(sentence.sentence_id)}
+                            className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                            <span className="font-medium">第 {index + 1} 句</span>
+                            <span className="text-xs tabular-nums text-muted-foreground">{index + 1}–{Math.min(index + 100, script.sentences.length)} 句</span>
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </nav>
+              )}
               {activeTool === "source" && <>
 {project.source_text?.trim() ? (
   <article className="mx-auto max-w-prose space-y-3 text-[15px] leading-8 text-foreground/80">
@@ -850,8 +874,8 @@ const actions = (
               预估时长 约 {formatSeconds(scriptAnalysis.durationSeconds)}
             </StatChip>
             {searchQuery && <div className="flex w-full items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span className="min-w-0 truncate">正在筛选“{searchQuery}”：{searchResults.sentences.length} 句</span>
-              <AppButton size="sm" variant="ghost" onClick={() => { setSearchQuery(""); setReplaceNotice("") }}>清除筛选</AppButton>
+              <span className="min-w-0 truncate">搜索“{searchQuery}”：匹配 {searchResults.sentences.length} 句，点击左侧结果定位</span>
+              <AppButton size="sm" variant="ghost" onClick={clearSearch}>清除搜索</AppButton>
             </div>}
           </div>
 
@@ -885,10 +909,10 @@ const actions = (
             <hr className="border-border/60" />
             {/* 句子列表 */}
             <section aria-label="句子" className="-mx-2 space-y-0.5">
-              {searchResults.sentences.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{searchQuery ? "没有包含该关键词的句子。" : "脚本内容为空。"}</p>
+              {script.sentences.length === 0 ? (
+                <p className="text-sm text-muted-foreground">脚本内容为空。</p>
               ) : (
-                searchResults.sentences.map((sentence) => (
+                script.sentences.map((sentence) => (
                   <SentenceRow
                     key={sentence.sentence_id}
                     sentence={sentence}

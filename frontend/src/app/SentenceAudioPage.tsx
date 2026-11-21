@@ -172,6 +172,26 @@ function SentenceList({
   const toneIndexOf = useRoleToneIndex()
   const total = sentences.total_sentences
   const pct = total > 0 ? Math.round((sentences.completed_sentences / total) * 100) : 0
+  const [jumpNumber, setJumpNumber] = React.useState("")
+  const listRef = React.useRef<HTMLUListElement>(null)
+  const jumpId = React.useId()
+  const target = /^\d+$/.test(jumpNumber)
+    ? sentences.sentences.find(sentence => sentence.sequence === Number(jumpNumber))
+    : undefined
+
+  React.useEffect(() => {
+    if (!target) return
+    const timer = window.setTimeout(() => {
+      onSelect(target.audio_sentence_id)
+      const list = listRef.current
+      const item = list?.querySelector<HTMLElement>(`[data-sequence="${target.sequence}"]`)
+      if (list && item) {
+        const top = item.getBoundingClientRect().top - list.getBoundingClientRect().top
+        list.scrollTo({ top: list.scrollTop + top - (list.clientHeight - item.clientHeight) / 2, behavior: "smooth" })
+      }
+    }, 400)
+    return () => window.clearTimeout(timer)
+  }, [target, onSelect])
 
   return (
     <AppCard className="flex flex-col overflow-hidden">
@@ -187,6 +207,19 @@ function SentenceList({
             )}
           </span>
         </div>
+        <div className="flex items-center gap-2">
+          <label htmlFor={jumpId} className="shrink-0 text-xs text-muted-foreground">跳转句号</label>
+          <input id={jumpId} type="text" inputMode="numeric" value={jumpNumber}
+            onChange={event => setJumpNumber(event.target.value)}
+            placeholder="输入句子序号"
+            aria-invalid={!!jumpNumber && !target}
+            aria-describedby={jumpId + "-status"}
+            className="min-w-0 flex-1 rounded-md border border-input bg-card px-2 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+        <p id={jumpId + "-status"} role="status" className="text-[11px] text-muted-foreground">
+          {jumpNumber ? target ? `定位第 ${target.sequence} 句` : "请输入列表中存在的句子序号" : "输入序号后自动滚动并选中对应句子"}
+        </p>
         <div className="h-1 overflow-hidden rounded-full bg-secondary">
           <div
             className="h-full rounded-full bg-primary transition-all"
@@ -194,12 +227,12 @@ function SentenceList({
           />
         </div>
       </div>
-      <ul className="max-h-[560px] flex-1 space-y-1 overflow-y-auto overscroll-contain p-2">
+      <ul ref={listRef} className="max-h-[560px] flex-1 space-y-1 overflow-y-auto overscroll-contain p-2">
         {sentences.sentences.map((s) => {
           const active = s.audio_sentence_id === activeId
           const tone = toneIndexOf(s.role.name)
           return (
-            <li key={s.audio_sentence_id}>
+            <li key={s.audio_sentence_id} data-sequence={s.sequence}>
               <button
                 type="button"
                 aria-current={active ? "true" : undefined}

@@ -165,41 +165,33 @@ export default function AudioPage({ projectId, scriptId, onNavigate }: AudioPage
   return (
     <RoleToneContext.Provider value={roleTones}>
       <div className="mx-auto flex min-h-full w-full min-w-0 max-w-7xl flex-col space-y-4">
-        {/* Header */}
-        <div className="flex min-w-0 flex-col gap-3">
-          <div>
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <AppButton
               variant="ghost"
               size="sm"
-              className="-ml-2 shrink-0 gap-1.5 text-muted-foreground"
+              aria-label="返回项目"
+              title="返回项目"
+              className="shrink-0 text-muted-foreground"
               onClick={() => onNavigate(`/projects/${projectId}`)}
             >
               <ArrowLeft />
-              返回项目
             </AppButton>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-semibold leading-tight tracking-tight" title={script.title}>
+                {script.title}
+              </h1>
+              <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5"><Headphones className="size-3.5" />音频生成</span>
+                <StatusBadge status={script.status} />
+                <span className="font-mono" title="脚本版本 · 编辑修订号">V{script.version} · r{script.edit_revision}</span>
+              </div>
+            </div>
           </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
-              <Headphones className="size-[18px]" />
-            </span>
-            <h1 className="shrink-0 text-xl font-semibold tracking-tight text-foreground">
-              音频生成
-            </h1>
-            <span aria-hidden="true" className="text-muted-foreground/30">/</span>
-            <button
-              type="button"
-              onClick={() => onNavigate(`/projects/${projectId}/scripts/${scriptId}`)}
-              title={script.title}
-              className="max-w-full truncate rounded-md text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:max-w-sm"
-            >
-              {script.title}
-            </button>
-            <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary ring-1 ring-primary/20">
-              V{script.version}
-            </span>
-            <StatusBadge status={script.status} />
-          </div>
-        </div>
+          <AppButton size="sm" variant="outline" onClick={() => onNavigate(`/projects/${projectId}/scripts/${scriptId}`)}>
+            <FileText />脚本详情
+          </AppButton>
+        </header>
 
         {/* 未确认提示 */}
         {!isCurrentConfirmed && (

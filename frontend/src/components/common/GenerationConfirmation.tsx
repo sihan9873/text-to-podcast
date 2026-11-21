@@ -21,85 +21,129 @@ type GenerationInfo = { text: string; kind: "script" | "audio"; title?: string }
 // 估算面板
 // ============================================================
 
-export function GenerationEstimate({ text, kind, title }: GenerationInfo) {
+type EstimateProps = GenerationInfo & { compact?: boolean }
+
+export function GenerationEstimate({ text, kind, title, compact = false }: EstimateProps) {
   const estimate = React.useMemo(() => estimateGeneration(text), [text])
   const processor = React.useMemo(() => new TextProcessor(), [])
   const timing = estimate[kind]
   const lang = LANGUAGE_LABELS[processor.detectLanguage(text).language]
   const topic = processor.detectTopic(text)
   const isScript = kind === "script"
+  const KindIcon = isScript ? FileText : AudioLines
+  const empty = !text.trim()
 
+  const tokenValue = isScript ? estimate.script.totalTokens : estimate.audio.textTokens
+  const tokenLabel = isScript ? "预计文本 Token" : "预计文本输入 Token"
+
+  if (compact) {
+    return (
+      <div className="space-y-2.5">
+        {title && (
+          <p className="flex items-center gap-2 text-sm font-medium" title={title}>
+            <KindIcon className="size-4 shrink-0 text-primary" />
+            <span className="truncate">{title}</span>
+          </p>
+        )}
+        {empty ? (
+          <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+            {isScript ? "项目还没有原文，无法估算" : "脚本内容为空，无法估算"}
+          </p>
+        ) : (
+          <>
+            <p className="text-[11px] tabular-nums text-muted-foreground">
+              {estimate.characters.toLocaleString()} 字符 · {lang} · {topic}
+            </p>
+            <div className="space-y-2.5 rounded-xl border border-border/60 bg-secondary/20 p-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-xs text-muted-foreground">{tokenLabel}</span>
+                <span className="text-base font-semibold tabular-nums">≈ {tokenValue.toLocaleString()}</span>
+              </div>
+              {isScript && (
+                <TokenBar input={estimate.script.inputTokens} output={estimate.script.outputTokens} />
+              )}
+              {!isScript && (
+                <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                  <Info className="mt-0.5 size-3 shrink-0" />
+                  音频输出 Token 以语音服务计费为准。
+                </p>
+              )}
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-secondary/20 px-3 py-2 text-xs">
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <Clock className="size-3.5 text-primary/80" />
+                预计生成时间（不含排队）
+              </span>
+              <span className="font-medium tabular-nums">{timing.minSeconds}–{timing.maxSeconds} 秒</span>
+            </div>
+          </>
+        )}
+      </div>
+    )
+  }
+
+  /* ---------- 完整版（确认弹窗）：与原来一致，只把尾部换成 EstimateNotes ---------- */
   return (
     <div className="space-y-4">
-      {title && (
-        <p className="truncate text-sm font-medium" title={title}>
-          {title}
-        </p>
-      )}
+      {title && <p className="truncate text-sm font-medium" title={title}>{title}</p>}
 
-      {/* 概览条 */}
       <div className="grid grid-cols-3 gap-2">
         <Stat icon={FileText} label="字符" value={estimate.characters.toLocaleString()} />
         <Stat icon={Sparkles} label="语言" value={lang} />
         <Stat icon={Cpu} label="主题" value={topic} className="truncate" />
       </div>
 
-      {/* Token 估算 */}
       <div className="rounded-xl border border-border bg-secondary/30 p-4">
         {isScript ? (
           <div className="space-y-3">
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-xs text-muted-foreground">预计文本 Token</span>
-              <span className="text-lg font-semibold tabular-nums">
-                ≈ {estimate.script.totalTokens.toLocaleString()}
-              </span>
+              <span className="text-lg font-semibold tabular-nums">≈ {estimate.script.totalTokens.toLocaleString()}</span>
             </div>
-            <TokenBar
-              input={estimate.script.inputTokens}
-              output={estimate.script.outputTokens}
-            />
+            <TokenBar input={estimate.script.inputTokens} output={estimate.script.outputTokens} />
           </div>
         ) : (
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="text-xs text-muted-foreground">预计文本输入 Token</span>
-            <span className="text-lg font-semibold tabular-nums">
-              ≈ {estimate.audio.textTokens.toLocaleString()}
-            </span>
-          </div>
-        )}
-        {!isScript && (
-          <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
-            <Info className="mt-0.5 size-3 shrink-0" />
-            音频输出 Token 无法仅按字数确定，实际以语音服务计费为准。
-          </p>
+          <>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-xs text-muted-foreground">预计文本输入 Token</span>
+              <span className="text-lg font-semibold tabular-nums">≈ {estimate.audio.textTokens.toLocaleString()}</span>
+            </div>
+            <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
+              <Info className="mt-0.5 size-3 shrink-0" />
+              音频输出 Token 无法仅按字数确定，实际以语音服务计费为准。
+            </p>
+          </>
         )}
       </div>
 
-      {/* 预计耗时 */}
       <div className="flex items-center gap-3 rounded-xl border border-border bg-secondary/30 px-4 py-3">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <Clock className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-xs text-muted-foreground">预计生成时间（不含排队）</p>
-          <p className="text-sm font-medium tabular-nums">
-            {timing.minSeconds}–{timing.maxSeconds} 秒
-          </p>
+          <p className="text-sm font-medium tabular-nums">{timing.minSeconds}–{timing.maxSeconds} 秒</p>
         </div>
       </div>
 
-      {/* 免责说明 */}
+      <EstimateNotes kind={kind} />
+    </div>
+  )
+}
+
+/** 免责声明 + 估算假设。弹窗里跟着单个估算显示；侧栏里整页只放一份（不传 kind） */
+export function EstimateNotes({ kind }: { kind?: "script" | "audio" }) {
+  return (
+    <div className="space-y-2">
       <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
         <AlertCircle className="mt-0.5 size-3 shrink-0" />
         <span>
           本地粗略估算，非实际用量或计费依据。模型、提示词、角色数、并发和网络均会影响结果。
-          {isScript
-            ? "脚本 Token 按字符当量估算。"
-            : "音频按文字输入当量估算，部分语音服务按字符或时长计费。"}
+          {kind === "script" && "脚本 Token 按字符当量估算。"}
+          {kind === "audio" && "音频按文字输入当量估算，部分语音服务按字符或时长计费。"}
+          {!kind && "脚本按字符当量估算；音频按文字输入当量估算，部分语音服务按字符或时长计费。"}
         </span>
       </p>
-
-      {/* 估算假设（默认收起） */}
       <details className="group rounded-lg border border-border/60 bg-secondary/20 px-3 py-2 text-[11px] text-muted-foreground">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-medium marker:content-none">
           估算假设

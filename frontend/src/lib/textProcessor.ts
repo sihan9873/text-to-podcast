@@ -1,3 +1,118 @@
+import axios from 'axios';
+
+// 定义 LanguageTool 返回的匹配结果结构
+export interface LTMatch {
+  message: string;          // 错误描述
+  shortMessage: string;     // 简短描述
+  offset: number;           // 错误起始位置
+  length: number;           // 错误长度
+  replacements: Array<{ value: string }>; // 建议替换词
+  rule: {
+    id: string;
+    description: string;
+    issueType: string;      // 例如 "misspelling", "grammar"
+  };
+  context: {
+    text: string;
+    offset: number;
+    length: number;
+  };
+}
+
+export interface CheckResult {
+  originalText: string;
+  matches: LTMatch[];
+  language: string;
+}
+
+/**
+ * 检查文本的语法与拼写错误
+ * @param text 待检查的文本（中英文混合时，建议分段处理或指定主要语言）
+ * @param language 语言代码，'en-US' 或 'zh-CN'
+ * @param apiUrl 可替换为自建 LanguageTool 服务地址以提升稳定性
+ */
+export async function checkText(
+  text: string,
+  language: 'en-US' | 'zh-CN' = 'en-US',
+  apiUrl: string = 'https://api.languagetoolplus.com/v2/check',
+  signal?: AbortSignal,
+): Promise<CheckResult> {
+  // 如果文本为空，直接返回空结果
+  if (!text || text.trim().length === 0) {
+    return { originalText: text, matches: [], language };
+  }
+
+  try {
+    const params = new URLSearchParams();
+    params.append('text', text);
+    params.append('language', language);
+    // 可选：开启更多规则
+    // params.append('enabledOnly', 'false');
+
+    const response = await axios.post<{ matches: LTMatch[] }>(apiUrl, params, {
+      signal,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      timeout: 10000,
+    });
+
+    return {
+      originalText: text,
+      matches: (response.data.matches || []).filter(m => validMatch(text, m)),
+      language,
+    };
+  } catch (error) {
+    if (axios.isCancel(error)) throw error;
+    throw new Error('语法检查服务暂时不可用，请稍后重试。');
+  }
+}
+
+/**
+ * 应用单条修改建议
+ * @param text 原始文本
+ * @param match 选中的错误项
+ * @param replacementIndex 替换建议的索引
+ */
+export function applySuggestion(
+  text: string,
+  match: LTMatch,
+  replacementIndex: number = 0
+): string {
+  if (!validMatch(text, match) || !Number.isInteger(replacementIndex) || !match.replacements?.[replacementIndex]) {
+    return text;
+  }
+  const replacement = match.replacements[replacementIndex].value;
+  const before = text.slice(0, match.offset);
+  const after = text.slice(match.offset + match.length);
+  return before + replacement + after;
+}
+
+/**
+ * 批量应用所有有建议的修改（从后往前替换，避免偏移量错乱）
+ */
+export function applyAllSuggestions(text: string, matches: LTMatch[]): string {
+  // 过滤出有替换建议的项，并按位置降序排列
+  const validMatches = matches
+    .filter(m => validMatch(text, m) && m.replacements && m.replacements.length > 0)
+    .sort((a, b) => b.offset - a.offset);
+
+  let result = text;
+  let boundary = text.length + 1;
+  for (const match of validMatches) {
+    if (match.offset + match.length > boundary || match.offset === boundary) continue;
+    const replacement = match.replacements[0].value;
+    result =
+      result.slice(0, match.offset) +
+      replacement +
+      result.slice(match.offset + match.length);
+    boundary = match.offset;
+  }
+  return result;
+}
+
+function validMatch(text: string, match: LTMatch): boolean {
+  return Number.isInteger(match.offset) && Number.isInteger(match.length)
+    && match.offset >= 0 && match.length >= 0 && match.offset + match.length <= text.length;
+}
 // textProcessor.ts
 
 export type Topic = "科技" | "财经" | "教育" | "娱乐" | "体育" | "其他"

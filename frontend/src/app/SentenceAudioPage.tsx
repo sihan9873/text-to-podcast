@@ -2,7 +2,7 @@
 import * as React from "react"
 import { StatusBadge } from "@/components/common/StatusBadge"
 import { isAbort, InlineError, RoleToneContext, useRoleToneIndex, formatMs, AudioDetailSkeleton, ErrorBlock, AudioRoleSettings } from "./Audio"
-import { ArrowLeft, ChevronDown, FileAudio, Loader2, RefreshCw, RotateCcw, ThumbsUp, CheckCircle2 } from "lucide-react"
+import { ArrowLeft, ChevronDown, FileAudio, FileText, Loader2, RefreshCw, RotateCcw, ThumbsUp, CheckCircle2 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { AppButton } from "@/components/common/AppButton"
@@ -36,6 +36,7 @@ export default function SentenceAudioPage({
 }: SentenceAudioPageProps) {
   const [version, setVersion] = React.useState<AudioVersionDetail | null>(null)
   const [scriptConfirmed, setScriptConfirmed] = React.useState(false)
+  const [scriptTitle, setScriptTitle] = React.useState("")
   const [sentences, setSentences] = React.useState<AudioSentencesResponse | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -53,6 +54,7 @@ export default function SentenceAudioPage({
       ])
       setVersion(d)
       setScriptConfirmed(script.status === "confirmed")
+      setScriptTitle(script.title)
       setSentences(s)
       setActiveSentenceId((cur) => cur ?? s.sentences[0]?.audio_sentence_id ?? null)
     } catch (e) {
@@ -96,33 +98,25 @@ export default function SentenceAudioPage({
   return (
     <RoleToneContext.Provider value={toneMap}>
       <div className="mx-auto flex min-h-full w-full min-w-0 max-w-6xl flex-col space-y-4">
-        {/* Header */}
-        <div className="flex min-w-0 flex-col gap-3">
-          <div>
-            <AppButton
-              variant="ghost"
-              size="sm"
-              className="-ml-2 shrink-0 gap-1.5 text-muted-foreground"
-              onClick={() =>
-                onNavigate(`/projects/${projectId}/scripts/${scriptId}/audio`)
-              }
-            >
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <AppButton variant="ghost" size="sm" aria-label="返回音频" title="返回音频" className="shrink-0 text-muted-foreground"
+              onClick={() => onNavigate(`/projects/${projectId}/scripts/${scriptId}/audio?versionId=${encodeURIComponent(versionId)}`)}>
               <ArrowLeft />
-              返回音频
             </AppButton>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-semibold leading-tight tracking-tight" title={scriptTitle}>{scriptTitle}</h1>
+              <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5"><FileAudio className="size-3.5" />逐句试听</span>
+                <StatusBadge status={version.status} />
+                <span className="font-mono" title="音频版本">音频 V{version.version}</span>
+              </div>
+            </div>
           </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
-              <FileAudio className="size-[18px]" />
-            </span>
-            <h1 className="shrink-0 text-xl font-semibold tracking-tight">逐句试听</h1>
-            <span aria-hidden className="text-muted-foreground/30">/</span>
-            <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary ring-1 ring-primary/20">
-              音频 V{version.version}
-            </span>
-            <StatusBadge status={version.status} />
-          </div>
-        </div>
+          <AppButton size="sm" variant="outline" onClick={() => onNavigate(`/projects/${projectId}/scripts/${scriptId}`)}>
+            <FileText />脚本详情
+          </AppButton>
+        </header>
 
         <AppCard>
           <details className="group">
